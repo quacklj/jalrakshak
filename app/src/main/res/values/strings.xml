@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every user-visible string in the app. Translations live in values-<code>/strings.xml for the
+  eight languages the picker offers: hi, mr, bn, te, ta, gu, kn (English is this file).
+
+  Nothing in a Composable may hard-code display text — the locale is overridden per-composition,
+  not per-process, so a literal would survive a language change and be the one word left in English.
+-->
+<resources>
+    <string name="app_name">Jalraksha</string>
+
+    <!-- The wordmark, written in the reader's own script. -->
+    <string name="brand_wordmark">JALRAKSHA</string>
+
+    <!-- ===== Sign in ===== -->
+    <string name="signin_title">Welcome back</string>
+    <string name="signin_subtitle">Check your village water before you drink it.</string>
+    <string name="field_mobile_number">Mobile number</string>
+    <string name="field_mobile_placeholder">98765 43210</string>
+    <string name="field_password">Password</string>
+    <string name="field_password_placeholder">••••••••</string>
+    <string name="action_show">Show</string>
+    <string name="action_hide">Hide</string>
+    <string name="signin_keep_signed_in">Keep me signed in</string>
+    <string name="signin_forgot">Forgot?</string>
+    <string name="action_sign_in">Sign in</string>
+    <string name="signin_use_otp">Get an OTP instead</string>
+    <string name="signin_new_here">New to Jalraksha?</string>
+    <string name="action_register">Register</string>
+
+    <!-- ===== One-time password ===== -->
+    <string name="otp_title">Enter the code</string>
+    <string name="otp_sent_to">Sent to +91 %1$s</string>
+    <string name="otp_placeholder">000000</string>
+    <string name="action_verify">Verify</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="otp_code_sent">We sent a 6-digit code to +91 %1$s.</string>
+
+    <!-- ===== Messages ===== -->
+    <string name="error_generic">Something went wrong. Try again.</string>
+    <string name="error_phone_length">Enter a 10-digit mobile number.</string>
+    <string name="error_password_short">Password must be at least 6 characters.</string>
+    <string name="error_bad_credentials">That number and password do not match.</string>
+    <string name="error_no_account">No account for that number yet. Tap Register.</string>
+    <string name="error_network">No connection. Check your signal and try again.</string>
+    <string name="error_too_many_attempts">Too many attempts. Wait a few minutes.</string>
+    <string name="error_enter_phone_first">Enter your mobile number first.</string>
+    <string name="info_password_reset_sent">A reset link is on its way. Ask your gram panchayat officer if it does not arrive.</string>
+
+    <!-- ===== Language ===== -->
+    <string name="action_skip">Skip</string>
+    <string name="language_title">Choose your\nlanguage</string>
+    <string name="language_subtitle">Pick the language you would rather read in — you can change it anytime.</string>
+    <string name="language_footnote">Alerts, water scores and advisories will arrive in %1$s.</string>
+    <string name="action_continue">Continue</string>
+
+    <!-- Each language named in the language currently being read. -->
+    <string name="language_en">English</string>
+    <string name="language_hi">Hindi</string>
+    <string name="language_mr">Marathi</string>
+    <string name="language_bn">Bengali</string>
+    <string name="language_te">Telugu</string>
+    <string name="language_ta">Tamil</string>
+    <string name="language_gu">Gujarati</string>
+    <string name="language_kn">Kannada</string>
+
+    <!-- ===== Village ===== -->
+    <string name="village_title">Select your\nvillage</string>
+    <string name="village_subtitle">This account will be permanently linked to the village you pick.</string>
+    <string name="village_score">Score %1$s</string>
+    <string name="village_reassign_note">Moved recently? A gram panchayat officer can reassign your village.</string>
+    <string name="village_confirm_named">Confirm — %1$s</string>
+    <string name="action_confirm">Confirm</string>
+    <string name="error_villages_load">Could not load villages. Check your connection.</string>
+    <string name="action_retry">Retry</string>
+
+    <plurals name="village_households">
+        <item quantity="one">%1$s household</item>
+        <item quantity="other">%1$s households</item>
+    </plurals>
+    <plurals name="village_sensors">
+        <item quantity="one">%1$s sensor</item>
+        <item quantity="other">%1$s sensors</item>
+    </plurals>
+
+    <!-- ===== Dashboard ===== -->
+    <string name="dashboard_your_village">YOUR VILLAGE</string>
+    <string name="dashboard_no_village">—</string>
+    <string name="gauge_caption">Water Score · out of 100</string>
+    <string name="dashboard_parameters_title">Today\'s parameters</string>
+    <string name="action_see_all">See all</string>
+    <string name="history_title">Score history</string>
+    <string name="history_subtitle">Last 7 days · %1$s this week</string>
+    <string name="history_range_7d">7D</string>
+    <string name="error_report_load">Could not reach the monitoring service. Pull to try again.</string>
+    <string name="dashboard_no_reading">No reading available yet.</string>
+    <!-- Checks passed, then the freshness of the reading. -->
+    <string name="dashboard_checks_and_tested">%1$s · %2$s</string>
+    <plurals name="dashboard_checks_passed">
+        <item quantity="one">%1$s check passed</item>
+        <item quantity="other">All %1$s checks passed</item>
+    </plurals>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_trends">Trends</string>
+    <string name="nav_report">Report</string>
+    <string name="nav_profile">Profile</string>
+
+    <string name="day_mon">Mon</string>
+    <string name="day_tue">Tue</string>
+    <string name="day_wed">Wed</string>
+    <string name="day_thu">Thu</string>
+    <string name="day_fri">Fri</string>
+    <string name="day_sat">Sat</string>
+    <string name="day_sun">Sun</string>
+
+    <!-- ===== Verdicts and grades (resolved from a key sent by the server) ===== -->
+    <string name="verdict_safe">Safe to drink</string>
+    <string name="verdict_boil">Boil before drinking</string>
+    <string name="verdict_unsafe">Do not drink</string>
+    <string name="verdict_unknown">Not enough readings</string>
+    <string name="grade_crystal_clear">Crystal Clear</string>
+    <string name="grade_good">Good</string>
+    <string name="grade_fair">Fair</string>
+    <string name="grade_poor">Poor</string>
+
+    <!-- ===== Water parameters ===== -->
+    <string name="param_ph">pH balance</string>
+    <string name="param_ph_note">Neutral · ideal 6.5–8.5</string>
+    <string name="param_tds">Dissolved solids</string>
+    <string name="param_tds_note">ppm · well under 500</string>
+    <string name="param_turbidity">Turbidity</string>
+    <string name="param_chlorine">Chlorine</string>
+    <string name="param_hardness">Hardness</string>
+    <string name="param_ecoli">E. coli</string>
+    <string name="param_temperature">Water temperature</string>
+
+    <string name="unit_ntu">NTU</string>
+    <string name="unit_mgl">mg/L</string>
+    <string name="unit_cfu">CFU</string>
+    <string name="unit_ppm">ppm</string>
+    <string name="unit_celsius">°C</string>
+
+    <string name="status_clear">Clear</string>
+    <string name="status_within_limit">Within limit</string>
+    <string name="status_soft">Soft</string>
+    <string name="status_hard">Hard</string>
+    <string name="status_not_detected">Not detected</string>
+    <string name="status_detected">Detected</string>
+    <string name="status_high">High</string>
+    <string name="status_low">Low</string>
+    <string name="status_not_reading">Not reading</string>
+
+    <!-- ===== Freshness of the last reading ===== -->
+    <string name="tested_just_now">tested just now</string>
+    <plurals name="tested_minutes_ago">
+        <item quantity="one">tested %1$s minute ago</item>
+        <item quantity="other">tested %1$s minutes ago</item>
+    </plurals>
+    <plurals name="tested_hours_ago">
+        <item quantity="one">tested %1$s hour ago</item>
+        <item quantity="other">tested %1$s hours ago</item>
+    </plurals>
+    <plurals name="tested_days_ago">
+        <item quantity="one">tested %1$s day ago</item>
+        <item quantity="other">tested %1$s days ago</item>
+    </plurals>
+
+    <!-- ===== Pushed notices ===== -->
+    <string name="notice_tanker_check_title">Next tanker check · Thursday 6 AM</string>
+    <string name="notice_tanker_check_body">Report a taste, smell or colour change anytime.</string>
+
+    <!-- ===== Notification channels ===== -->
+    <string name="channel_advisory">Water safety advisories</string>
+    <string name="channel_advisory_description">Urgent warnings when your village water is unsafe to drink.</string>
+    <string name="channel_updates">Score updates</string>
+    <string name="channel_updates_description">Daily water score changes and scheduled tanker checks.</string>
+
+    <!-- ===== Screen 05 · Trends ===== -->
+    <string name="trends_title">Water trends</string>
+    <string name="trend_improving">Improving</string>
+    <string name="trend_steady">Steady</string>
+    <string name="trend_declining">Declining</string>
+    <string name="range_7d">7D</string>
+    <string name="range_30d">30D</string>
+    <string name="range_1y">1Y</string>
+    <string name="range_label_week">this week</string>
+    <string name="range_label_month">this month</string>
+    <string name="range_label_year">this year</string>
+    <string name="trends_average_score">Average score · %1$s</string>
+    <string name="trends_peak_low">Peak %1$s · Low %2$s</string>
+    <string name="trends_no_unsafe_days">No unsafe days</string>
+    <string name="trends_parameter_movement">Parameter movement</string>
+    <string name="trends_delta_steady">steady</string>
+    <string name="trends_monthly_title">Monthly safe days</string>
+    <string name="trends_monthly_subtitle">Days the score stayed above 70</string>
+    <plurals name="trends_unsafe_days">
+        <item quantity="one">%1$s unsafe day</item>
+        <item quantity="other">%1$s unsafe days</item>
+    </plurals>
+
+    <!-- ===== Screen 06 · Report ===== -->
+    <string name="report_title">Report water</string>
+    <string name="report_source_line">%1$s · %2$s</string>
+    <string name="report_tester_notice">A field tester visits within %1$s of every report.</string>
+    <string name="report_tester_window">24 hours</string>
+    <string name="report_question_issue">What did you notice?</string>
+    <string name="report_question_severity">How serious is it?</string>
+    <string name="report_note_label">Add a note</string>
+    <string name="report_note_placeholder">Describe what you noticed — when it started, which tap or handpump.</string>
+    <string name="report_note_counter">%1$s / %2$s</string>
+    <string name="report_add_photo">Add photo</string>
+    <string name="report_photo_attached">Water sample photo</string>
+    <string name="report_remove_photo">Remove</string>
+    <string name="report_submit">Submit report</string>
+    <string name="report_sending">Sending…</string>
+    <string name="report_sent">Report sent. A field tester will visit within 24 hours.</string>
+    <string name="report_failed">Could not send the report. It will stay here until you try again.</string>
+    <string name="report_recent">Your recent reports</string>
+    <string name="report_none_yet">You have not reported anything yet.</string>
+
+    <string name="issue_taste">Bad taste</string>
+    <string name="issue_odour">Odour</string>
+    <string name="issue_colour">Colour</string>
+    <string name="issue_no_supply">No supply</string>
+    <string name="issue_illness">Illness</string>
+    <string name="issue_other">Other</string>
+
+    <string name="severity_minor">Minor</string>
+    <string name="severity_concerning">Concerning</string>
+    <string name="severity_urgent">Urgent</string>
+
+    <string name="report_status_open">Open</string>
+    <string name="report_status_resolved">Resolved</string>
+    <string name="report_status_closed">Closed</string>
+
+    <string name="source_handpump">Handpump %1$s</string>
+    <string name="source_tap_line">Tap line %1$s</string>
+    <string name="source_well">Well %1$s</string>
+    <string name="source_tank">Tank %1$s</string>
+
+    <!-- ===== Screen 07 · Profile ===== -->
+    <string name="profile_eyebrow">PROFILE</string>
+    <string name="action_edit">Edit</string>
+    <string name="profile_verified">Verified</string>
+    <string name="profile_stat_reports">Reports filed</string>
+    <string name="profile_stat_score">Village score</string>
+    <string name="profile_stat_member_since">Member since</string>
+    <string name="profile_months_short">%1$s mo</string>
+    <string name="setting_language">Language</string>
+    <string name="setting_language_sub">Alerts and advisories</string>
+    <string name="setting_village">Village</string>
+    <string name="setting_village_sub">Linked to this account</string>
+    <string name="setting_household">Household size</string>
+    <string name="setting_household_sub">Used for supply planning</string>
+    <string name="setting_source">Water source</string>
+    <string name="setting_source_sub">Primary intake point</string>
+    <string name="profile_alerts_title">Unsafe water alerts</string>
+    <string name="profile_alerts_subtitle">SMS + push whenever the score drops below 70.</string>
+    <string name="help_guide">Help &amp; water safety guide</string>
+    <string name="help_contact">Contact gram panchayat</string>
+    <string name="help_privacy">Privacy &amp; terms</string>
+    <string name="action_sign_out">Sign out</string>
+    <string name="profile_footer">Jalraksha v%1$s · Jal Jeevan Mission</string>
+
+    <string name="unit_ph">pH</string>
+</resources>

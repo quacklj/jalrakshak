@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Compose UI reads its palette from JrColor.kt. These exist only for the places the framework
+  needs an XML resource: the splash window and the FCM notification tint.
+-->
+<resources>
+    <color name="jr_primary">#FF1D4ED8</color>
+    <color name="jr_surface">#FFFFFFFF</color>
+</resources>

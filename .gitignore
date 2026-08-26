@@ -1,0 +1,44 @@
+# --- Android / Gradle ---
+*.iml
+.gradle/
+.kotlin/
+build/
+/captures
+.externalNativeBuild
+.cxx
+
+# Machine-specific: points at this laptop's Android SDK.
+local.properties
+
+# --- IDE ---
+# Ignored wholesale: these files carry absolute paths and per-machine state,
+# and produce a merge conflict on every pull once more than one person builds.
+.idea/
+
+# --- Node / Next.js (dashboard) ---
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+.vercel
+
+# --- Secrets ---
+# google-services.json is safe to commit (it ships inside the APK). These are not.
+*.jks
+*.keystore
+keystore.properties
+*-service-account*.json
+serviceAccountKey.json
+*.pem
+*.p12
+.env
+.env.*
+!.env.example
+
+# --- Noise ---
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

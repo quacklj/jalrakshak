@@ -1,0 +1,22 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Compose owns everything on screen, so the platform theme only has to hand off cleanly: no
+      action bar, and a white window so there is no flash of grey before the first frame.
+    -->
+    <style name="Theme.JalRaksha" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/jr_surface</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">true</item>
+    </style>
+
+    <!-- Launch theme: the brand droplet on white, handed to Compose once the session resolves. -->
+    <style name="Theme.JalRaksha.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/jr_surface</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_splash_droplet</item>
+        <item name="postSplashScreenTheme">@style/Theme.JalRaksha</item>
+    </style>
+
+</resources>

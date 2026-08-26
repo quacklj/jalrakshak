@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">জলরক্ষা</string>
+    <string name="brand_wordmark">জলরক্ষা</string>
+
+    <!-- ===== সাইন ইন ===== -->
+    <string name="signin_title">আবার স্বাগতম</string>
+    <string name="signin_subtitle">খাওয়ার আগে আপনার গ্রামের জল পরীক্ষা করুন।</string>
+    <string name="field_mobile_number">মোবাইল নম্বর</string>
+    <string name="field_mobile_placeholder">98765 43210</string>
+    <string name="field_password">পাসওয়ার্ড</string>
+    <string name="field_password_placeholder">••••••••</string>
+    <string name="action_show">দেখান</string>
+    <string name="action_hide">লুকান</string>
+    <string name="signin_keep_signed_in">আমাকে সাইন ইন রাখুন</string>
+    <string name="signin_forgot">ভুলে গেছেন?</string>
+    <string name="action_sign_in">সাইন ইন করুন</string>
+    <string name="signin_use_otp">বদলে OTP নিন</string>
+    <string name="signin_new_here">জলরক্ষায় নতুন?</string>
+    <string name="action_register">নিবন্ধন করুন</string>
+
+    <!-- ===== OTP ===== -->
+    <string name="otp_title">কোড লিখুন</string>
+    <string name="otp_sent_to">+91 %1$s-এ পাঠানো হয়েছে</string>
+    <string name="otp_placeholder">000000</string>
+    <string name="action_verify">যাচাই করুন</string>
+    <string name="action_cancel">বাতিল</string>
+    <string name="otp_code_sent">আমরা +91 %1$s-এ 6 সংখ্যার কোড পাঠিয়েছি।</string>
+
+    <!-- ===== বার্তা ===== -->
+    <string name="error_generic">কিছু ভুল হয়েছে। আবার চেষ্টা করুন।</string>
+    <string name="error_phone_length">10 সংখ্যার মোবাইল নম্বর লিখুন।</string>
+    <string name="error_password_short">পাসওয়ার্ড অন্তত 6 অক্ষরের হতে হবে।</string>
+    <string name="error_bad_credentials">এই নম্বর ও পাসওয়ার্ড মিলছে না।</string>
+    <string name="error_no_account">এই নম্বরের কোনও অ্যাকাউন্ট নেই। নিবন্ধন করুন-এ চাপুন।</string>
+    <string name="error_network">সংযোগ নেই। সিগন্যাল দেখে আবার চেষ্টা করুন।</string>
+    <string name="error_too_many_attempts">অনেকবার চেষ্টা হয়েছে। কয়েক মিনিট অপেক্ষা করুন।</string>
+    <string name="error_enter_phone_first">আগে আপনার মোবাইল নম্বর লিখুন।</string>
+    <string name="info_password_reset_sent">রিসেট লিঙ্ক পাঠানো হচ্ছে। না পেলে গ্রাম পঞ্চায়েত আধিকারিককে জানান।</string>
+
+    <!-- ===== ভাষা ===== -->
+    <string name="action_skip">এড়িয়ে যান</string>
+    <string name="language_title">আপনার ভাষা\nবেছে নিন</string>
+    <string name="language_subtitle">যে ভাষায় পড়তে চান সেটি বেছে নিন — যে কোনও সময় বদলাতে পারেন।</string>
+    <string name="language_footnote">সতর্কতা, জল স্কোর ও পরামর্শ %1$s ভাষায় আসবে।</string>
+    <string name="action_continue">এগিয়ে যান</string>
+
+    <string name="language_en">ইংরেজি</string>
+    <string name="language_hi">হিন্দি</string>
+    <string name="language_mr">মারাঠি</string>
+    <string name="language_bn">বাংলা</string>
+    <string name="language_te">তেলুগু</string>
+    <string name="language_ta">তামিল</string>
+    <string name="language_gu">গুজরাটি</string>
+    <string name="language_kn">কন্নড়</string>
+
+    <!-- ===== গ্রাম ===== -->
+    <string name="village_title">আপনার গ্রাম\nবাছুন</string>
+    <string name="village_subtitle">এই অ্যাকাউন্ট আপনার বাছা গ্রামের সঙ্গে চিরকালের জন্য যুক্ত হবে।</string>
+    <string name="village_score">স্কোর %1$s</string>
+    <string name="village_reassign_note">সম্প্রতি স্থানান্তরিত হয়েছেন? গ্রাম পঞ্চায়েত আধিকারিক আপনার গ্রাম বদলে দিতে পারেন।</string>
+    <string name="village_confirm_named">নিশ্চিত করুন — %1$s</string>
+    <string name="action_confirm">নিশ্চিত করুন</string>
+    <string name="error_villages_load">গ্রামের তালিকা আসেনি। আপনার সংযোগ দেখুন।</string>
+    <string name="action_retry">আবার চেষ্টা করুন</string>
+
+    <plurals name="village_households">
+        <item quantity="one">%1$s পরিবার</item>
+        <item quantity="other">%1$s পরিবার</item>
+    </plurals>
+    <plurals name="village_sensors">
+        <item quantity="one">%1$s সেন্সর</item>
+        <item quantity="other">%1$s সেন্সর</item>
+    </plurals>
+
+    <!-- ===== ড্যাশবোর্ড ===== -->
+    <string name="dashboard_your_village">আপনার গ্রাম</string>
+    <string name="dashboard_no_village">—</string>
+    <string name="gauge_caption">জল স্কোর · 100-এর মধ্যে</string>
+    <string name="dashboard_parameters_title">আজকের মাপকাঠি</string>
+    <string name="action_see_all">সব দেখুন</string>
+    <string name="history_title">স্কোরের ইতিহাস</string>
+    <string name="history_subtitle">গত 7 দিন · এই সপ্তাহে %1$s</string>
+    <string name="history_range_7d">7দি</string>
+    <string name="error_report_load">নজরদারি পরিষেবায় পৌঁছানো যায়নি। টেনে আবার চেষ্টা করুন।</string>
+    <string name="dashboard_no_reading">এখনও কোনও রিডিং নেই।</string>
+    <string name="dashboard_checks_and_tested">%1$s · %2$s</string>
+    <plurals name="dashboard_checks_passed">
+        <item quantity="one">%1$s পরীক্ষা উত্তীর্ণ</item>
+        <item quantity="other">সব %1$s পরীক্ষা উত্তীর্ণ</item>
+    </plurals>
+
+    <string name="nav_home">হোম</string>
+    <string name="nav_trends">প্রবণতা</string>
+    <string name="nav_report">অভিযোগ</string>
+    <string name="nav_profile">প্রোফাইল</string>
+
+    <string name="day_mon">সোম</string>
+    <string name="day_tue">মঙ্গল</string>
+    <string name="day_wed">বুধ</string>
+    <string name="day_thu">বৃহঃ</string>
+    <string name="day_fri">শুক্র</string>
+    <string name="day_sat">শনি</string>
+    <string name="day_sun">রবি</string>
+
+    <!-- ===== রায় ===== -->
+    <string name="verdict_safe">পান করার উপযুক্ত</string>
+    <string name="verdict_boil">পান করার আগে ফোটান</string>
+    <string name="verdict_unsafe">পান করবেন না</string>
+    <string name="verdict_unknown">যথেষ্ট রিডিং নেই</string>
+    <string name="grade_crystal_clear">সম্পূর্ণ স্বচ্ছ</string>
+    <string name="grade_good">ভালো</string>
+    <string name="grade_fair">মোটামুটি</string>
+    <string name="grade_poor">খারাপ</string>
+
+    <!-- ===== মাপকাঠি ===== -->
+    <string name="param_ph">পিএইচ ভারসাম্য</string>
+    <string name="param_ph_note">নিরপেক্ষ · আদর্শ 6.5–8.5</string>
+    <string name="param_tds">দ্রবীভূত কঠিন পদার্থ</string>
+    <string name="param_tds_note">ppm · 500-এর অনেক নিচে</string>
+    <string name="param_turbidity">ঘোলাটে ভাব</string>
+    <string name="param_chlorine">ক্লোরিন</string>
+    <string name="param_hardness">কাঠিন্য</string>
+    <string name="param_ecoli">ই. কোলাই</string>
+    <string name="param_temperature">জলের তাপমাত্রা</string>
+
+    <string name="unit_ntu">NTU</string>
+    <string name="unit_mgl">মিগ্রা/লি</string>
+    <string name="unit_cfu">CFU</string>
+    <string name="unit_ppm">ppm</string>
+    <string name="unit_celsius">°সে</string>
+
+    <string name="status_clear">স্বচ্ছ</string>
+    <string name="status_within_limit">সীমার মধ্যে</string>
+    <string name="status_soft">মৃদু</string>
+    <string name="status_hard">কঠিন</string>
+    <string name="status_not_detected">পাওয়া যায়নি</string>
+    <string name="status_detected">পাওয়া গেছে</string>
+    <string name="status_high">বেশি</string>
+    <string name="status_low">কম</string>
+    <string name="status_not_reading">রিডিং নেই</string>
+
+    <!-- ===== কখন পরীক্ষা হয়েছে ===== -->
+    <string name="tested_just_now">এইমাত্র পরীক্ষা হয়েছে</string>
+    <plurals name="tested_minutes_ago">
+        <item quantity="one">%1$s মিনিট আগে পরীক্ষা হয়েছে</item>
+        <item quantity="other">%1$s মিনিট আগে পরীক্ষা হয়েছে</item>
+    </plurals>
+    <plurals name="tested_hours_ago">
+        <item quantity="one">%1$s ঘণ্টা আগে পরীক্ষা হয়েছে</item>
+        <item quantity="other">%1$s ঘণ্টা আগে পরীক্ষা হয়েছে</item>
+    </plurals>
+    <plurals name="tested_days_ago">
+        <item quantity="one">%1$s দিন আগে পরীক্ষা হয়েছে</item>
+        <item quantity="other">%1$s দিন আগে পরীক্ষা হয়েছে</item>
+    </plurals>
+
+    <!-- ===== বিজ্ঞপ্তি ===== -->
+    <string name="notice_tanker_check_title">পরবর্তী ট্যাঙ্কার পরীক্ষা · বৃহস্পতিবার সকাল 6টা</string>
+    <string name="notice_tanker_check_body">স্বাদ, গন্ধ বা রং বদলালে যে কোনও সময় জানান।</string>
+
+    <string name="channel_advisory">জল সুরক্ষা সতর্কতা</string>
+    <string name="channel_advisory_description">আপনার গ্রামের জল পান করার অযোগ্য হলে জরুরি সতর্কতা।</string>
+    <string name="channel_updates">স্কোর আপডেট</string>
+    <string name="channel_updates_description">প্রতিদিনের জল স্কোরের বদল ও নির্ধারিত ট্যাঙ্কার পরীক্ষা।</string>
+
+    <!-- ===== স্ক্রিন 05 · প্রবণতা ===== -->
+    <string name="trends_title">জলের প্রবণতা</string>
+    <string name="trend_improving">উন্নত হচ্ছে</string>
+    <string name="trend_steady">স্থিতিশীল</string>
+    <string name="trend_declining">খারাপ হচ্ছে</string>
+    <string name="range_7d">7দি</string>
+    <string name="range_30d">30দি</string>
+    <string name="range_1y">1ব</string>
+    <string name="range_label_week">এই সপ্তাহে</string>
+    <string name="range_label_month">এই মাসে</string>
+    <string name="range_label_year">এই বছরে</string>
+    <string name="trends_average_score">গড় স্কোর · %1$s</string>
+    <string name="trends_peak_low">সর্বোচ্চ %1$s · সর্বনিম্ন %2$s</string>
+    <string name="trends_no_unsafe_days">কোনও অনিরাপদ দিন নেই</string>
+    <string name="trends_parameter_movement">মাপকাঠির পরিবর্তন</string>
+    <string name="trends_delta_steady">স্থিতিশীল</string>
+    <string name="trends_monthly_title">মাসের নিরাপদ দিন</string>
+    <string name="trends_monthly_subtitle">যেসব দিনে স্কোর 70-এর উপরে ছিল</string>
+    <plurals name="trends_unsafe_days">
+        <item quantity="one">%1$s অনিরাপদ দিন</item>
+        <item quantity="other">%1$s অনিরাপদ দিন</item>
+    </plurals>
+
+    <!-- ===== স্ক্রিন 06 · অভিযোগ ===== -->
+    <string name="report_title">জলের অভিযোগ</string>
+    <string name="report_source_line">%1$s · %2$s</string>
+    <string name="report_tester_notice">প্রতিটি অভিযোগের %1$sর মধ্যে পরীক্ষক আসেন।</string>
+    <string name="report_tester_window">24 ঘণ্টা</string>
+    <string name="report_question_issue">আপনি কী লক্ষ্য করেছেন?</string>
+    <string name="report_question_severity">এটি কতটা গুরুতর?</string>
+    <string name="report_note_label">একটি নোট লিখুন</string>
+    <string name="report_note_placeholder">কী লক্ষ্য করেছেন লিখুন — কবে থেকে, কোন কল বা হ্যান্ডপাম্প।</string>
+    <string name="report_note_counter">%1$s / %2$s</string>
+    <string name="report_add_photo">ছবি যোগ করুন</string>
+    <string name="report_photo_attached">জলের নমুনার ছবি</string>
+    <string name="report_remove_photo">সরান</string>
+    <string name="report_submit">অভিযোগ পাঠান</string>
+    <string name="report_sending">পাঠানো হচ্ছে…</string>
+    <string name="report_sent">অভিযোগ পাঠানো হয়েছে। 24 ঘণ্টার মধ্যে পরীক্ষক আসবেন।</string>
+    <string name="report_failed">অভিযোগ পাঠানো যায়নি। আবার চেষ্টা না করা পর্যন্ত এটি এখানেই থাকবে।</string>
+    <string name="report_recent">আপনার সাম্প্রতিক অভিযোগ</string>
+    <string name="report_none_yet">আপনি এখনও কোনও অভিযোগ করেননি।</string>
+
+    <string name="issue_taste">স্বাদ খারাপ</string>
+    <string name="issue_odour">দুর্গন্ধ</string>
+    <string name="issue_colour">রং</string>
+    <string name="issue_no_supply">জল আসছে না</string>
+    <string name="issue_illness">অসুস্থতা</string>
+    <string name="issue_other">অন্যান্য</string>
+
+    <string name="severity_minor">সামান্য</string>
+    <string name="severity_concerning">উদ্বেগজনক</string>
+    <string name="severity_urgent">জরুরি</string>
+
+    <string name="report_status_open">খোলা</string>
+    <string name="report_status_resolved">সমাধান হয়েছে</string>
+    <string name="report_status_closed">বন্ধ</string>
+
+    <string name="source_handpump">হ্যান্ডপাম্প %1$s</string>
+    <string name="source_tap_line">কলের লাইন %1$s</string>
+    <string name="source_well">কূপ %1$s</string>
+    <string name="source_tank">ট্যাঙ্ক %1$s</string>
+
+    <!-- ===== স্ক্রিন 07 · প্রোফাইল ===== -->
+    <string name="profile_eyebrow">প্রোফাইল</string>
+    <string name="action_edit">সম্পাদনা</string>
+    <string name="profile_verified">যাচাই করা</string>
+    <string name="profile_stat_reports">দাখিল করা অভিযোগ</string>
+    <string name="profile_stat_score">গ্রামের স্কোর</string>
+    <string name="profile_stat_member_since">কবে থেকে সদস্য</string>
+    <string name="profile_months_short">%1$s মাস</string>
+    <string name="setting_language">ভাষা</string>
+    <string name="setting_language_sub">সতর্কতা ও পরামর্শ</string>
+    <string name="setting_village">গ্রাম</string>
+    <string name="setting_village_sub">এই অ্যাকাউন্টের সঙ্গে যুক্ত</string>
+    <string name="setting_household">পরিবারের সদস্য</string>
+    <string name="setting_household_sub">সরবরাহ পরিকল্পনার জন্য</string>
+    <string name="setting_source">জলের উৎস</string>
+    <string name="setting_source_sub">প্রধান যেখান থেকে জল নেন</string>
+    <string name="profile_alerts_title">অনিরাপদ জলের সতর্কতা</string>
+    <string name="profile_alerts_subtitle">স্কোর 70-এর নিচে নামলেই SMS ও পুশ।</string>
+    <string name="help_guide">সহায়তা ও জল সুরক্ষা নির্দেশিকা</string>
+    <string name="help_contact">গ্রাম পঞ্চায়েতে যোগাযোগ করুন</string>
+    <string name="help_privacy">গোপনীয়তা ও শর্তাবলি</string>
+    <string name="action_sign_out">সাইন আউট</string>
+    <string name="profile_footer">জলরক্ষা v%1$s · জল জীবন মিশন</string>
+
+    <string name="unit_ph">পিএইচ</string>
+</resources>

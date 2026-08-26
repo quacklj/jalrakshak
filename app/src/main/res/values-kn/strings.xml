@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ಜಲರಕ್ಷಾ</string>
+    <string name="brand_wordmark">ಜಲರಕ್ಷಾ</string>
+
+    <!-- ===== ಸೈನ್ ಇನ್ ===== -->
+    <string name="signin_title">ಮತ್ತೆ ಸ್ವಾಗತ</string>
+    <string name="signin_subtitle">ಕುಡಿಯುವ ಮೊದಲು ನಿಮ್ಮ ಊರಿನ ನೀರನ್ನು ಪರಿಶೀಲಿಸಿ.</string>
+    <string name="field_mobile_number">ಮೊಬೈಲ್ ಸಂಖ್ಯೆ</string>
+    <string name="field_mobile_placeholder">98765 43210</string>
+    <string name="field_password">ಪಾಸ್‌ವರ್ಡ್</string>
+    <string name="field_password_placeholder">••••••••</string>
+    <string name="action_show">ತೋರಿಸಿ</string>
+    <string name="action_hide">ಮರೆಮಾಡಿ</string>
+    <string name="signin_keep_signed_in">ನನ್ನನ್ನು ಸೈನ್ ಇನ್ ಆಗಿ ಇರಿಸಿ</string>
+    <string name="signin_forgot">ಮರೆತಿರಾ?</string>
+    <string name="action_sign_in">ಸೈನ್ ಇನ್ ಮಾಡಿ</string>
+    <string name="signin_use_otp">ಬದಲಿಗೆ OTP ಪಡೆಯಿರಿ</string>
+    <string name="signin_new_here">ಜಲರಕ್ಷಾಗೆ ಹೊಸಬರೇ?</string>
+    <string name="action_register">ನೋಂದಣಿ ಮಾಡಿ</string>
+
+    <!-- ===== OTP ===== -->
+    <string name="otp_title">ಕೋಡ್ ನಮೂದಿಸಿ</string>
+    <string name="otp_sent_to">+91 %1$s ಗೆ ಕಳುಹಿಸಲಾಗಿದೆ</string>
+    <string name="otp_placeholder">000000</string>
+    <string name="action_verify">ಪರಿಶೀಲಿಸಿ</string>
+    <string name="action_cancel">ರದ್ದುಮಾಡಿ</string>
+    <string name="otp_code_sent">ನಾವು +91 %1$s ಗೆ 6 ಅಂಕಿಯ ಕೋಡ್ ಕಳುಹಿಸಿದ್ದೇವೆ.</string>
+
+    <!-- ===== ಸಂದೇಶಗಳು ===== -->
+    <string name="error_generic">ಏನೋ ತಪ್ಪಾಯಿತು. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.</string>
+    <string name="error_phone_length">10 ಅಂಕಿಯ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ನಮೂದಿಸಿ.</string>
+    <string name="error_password_short">ಪಾಸ್‌ವರ್ಡ್ ಕನಿಷ್ಠ 6 ಅಕ್ಷರಗಳಿರಬೇಕು.</string>
+    <string name="error_bad_credentials">ಈ ಸಂಖ್ಯೆ ಮತ್ತು ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಾಣಿಕೆಯಾಗುತ್ತಿಲ್ಲ.</string>
+    <string name="error_no_account">ಈ ಸಂಖ್ಯೆಗೆ ಖಾತೆ ಇಲ್ಲ. ನೋಂದಣಿ ಮಾಡಿ ಒತ್ತಿ.</string>
+    <string name="error_network">ಸಂಪರ್ಕವಿಲ್ಲ. ಸಿಗ್ನಲ್ ನೋಡಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.</string>
+    <string name="error_too_many_attempts">ಹಲವು ಬಾರಿ ಪ್ರಯತ್ನಿಸಿದ್ದೀರಿ. ಕೆಲವು ನಿಮಿಷ ಕಾಯಿರಿ.</string>
+    <string name="error_enter_phone_first">ಮೊದಲು ನಿಮ್ಮ ಮೊಬೈಲ್ ಸಂಖ್ಯೆ ನಮೂದಿಸಿ.</string>
+    <string name="info_password_reset_sent">ಮರುಹೊಂದಿಸುವ ಲಿಂಕ್ ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ. ಬರದಿದ್ದರೆ ಗ್ರಾಮ ಪಂಚಾಯತ್ ಅಧಿಕಾರಿಯನ್ನು ಕೇಳಿ.</string>
+
+    <!-- ===== ಭಾಷೆ ===== -->
+    <string name="action_skip">ಬಿಟ್ಟುಬಿಡಿ</string>
+    <string name="language_title">ನಿಮ್ಮ ಭಾಷೆಯನ್ನು\nಆಯ್ಕೆಮಾಡಿ</string>
+    <string name="language_subtitle">ನೀವು ಯಾವ ಭಾಷೆಯಲ್ಲಿ ಓದಲು ಬಯಸುತ್ತೀರೋ ಅದನ್ನು ಆಯ್ಕೆಮಾಡಿ — ಇದನ್ನು ಯಾವಾಗ ಬೇಕಾದರೂ ಬದಲಾಯಿಸಬಹುದು.</string>
+    <string name="language_footnote">ಎಚ್ಚರಿಕೆಗಳು, ಜಲ ಅಂಕ ಮತ್ತು ಸಲಹೆಗಳು %1$s ನಲ್ಲಿ ಬರುತ್ತವೆ.</string>
+    <string name="action_continue">ಮುಂದುವರಿಸಿ</string>
+
+    <string name="language_en">ಇಂಗ್ಲಿಷ್</string>
+    <string name="language_hi">ಹಿಂದಿ</string>
+    <string name="language_mr">ಮರಾಠಿ</string>
+    <string name="language_bn">ಬಂಗಾಳಿ</string>
+    <string name="language_te">ತೆಲುಗು</string>
+    <string name="language_ta">ತಮಿಳು</string>
+    <string name="language_gu">ಗುಜರಾತಿ</string>
+    <string name="language_kn">ಕನ್ನಡ</string>
+
+    <!-- ===== ಗ್ರಾಮ ===== -->
+    <string name="village_title">ನಿಮ್ಮ ಗ್ರಾಮವನ್ನು\nಆಯ್ಕೆಮಾಡಿ</string>
+    <string name="village_subtitle">ಈ ಖಾತೆ ನೀವು ಆಯ್ಕೆಮಾಡುವ ಗ್ರಾಮದೊಂದಿಗೆ ಶಾಶ್ವತವಾಗಿ ಜೋಡಣೆಯಾಗುತ್ತದೆ.</string>
+    <string name="village_score">ಅಂಕ %1$s</string>
+    <string name="village_reassign_note">ಇತ್ತೀಚೆಗೆ ಸ್ಥಳಾಂತರಗೊಂಡಿರಾ? ಗ್ರಾಮ ಪಂಚಾಯತ್ ಅಧಿಕಾರಿ ನಿಮ್ಮ ಗ್ರಾಮವನ್ನು ಬದಲಾಯಿಸಬಹುದು.</string>
+    <string name="village_confirm_named">ಖಚಿತಪಡಿಸಿ — %1$s</string>
+    <string name="action_confirm">ಖಚಿತಪಡಿಸಿ</string>
+    <string name="error_villages_load">ಗ್ರಾಮಗಳ ಪಟ್ಟಿ ಬರಲಿಲ್ಲ. ನಿಮ್ಮ ಸಂಪರ್ಕ ಪರಿಶೀಲಿಸಿ.</string>
+    <string name="action_retry">ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ</string>
+
+    <plurals name="village_households">
+        <item quantity="one">%1$s ಮನೆ</item>
+        <item quantity="other">%1$s ಮನೆಗಳು</item>
+    </plurals>
+    <plurals name="village_sensors">
+        <item quantity="one">%1$s ಸಂವೇದಕ</item>
+        <item quantity="other">%1$s ಸಂವೇದಕಗಳು</item>
+    </plurals>
+
+    <!-- ===== ಡ್ಯಾಶ್‌ಬೋರ್ಡ್ ===== -->
+    <string name="dashboard_your_village">ನಿಮ್ಮ ಗ್ರಾಮ</string>
+    <string name="dashboard_no_village">—</string>
+    <string name="gauge_caption">ಜಲ ಅಂಕ · 100 ರಲ್ಲಿ</string>
+    <string name="dashboard_parameters_title">ಇಂದಿನ ಮಾಪನಗಳು</string>
+    <string name="action_see_all">ಎಲ್ಲವನ್ನೂ ನೋಡಿ</string>
+    <string name="history_title">ಅಂಕದ ಇತಿಹಾಸ</string>
+    <string name="history_subtitle">ಕಳೆದ 7 ದಿನ · ಈ ವಾರ %1$s</string>
+    <string name="history_range_7d">7ದಿ</string>
+    <string name="error_report_load">ಮೇಲ್ವಿಚಾರಣಾ ಸೇವೆಯನ್ನು ತಲುಪಲಾಗಲಿಲ್ಲ. ಎಳೆದು ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.</string>
+    <string name="dashboard_no_reading">ಇನ್ನೂ ಯಾವುದೇ ಅಳತೆ ಲಭ್ಯವಿಲ್ಲ.</string>
+    <string name="dashboard_checks_and_tested">%1$s · %2$s</string>
+    <plurals name="dashboard_checks_passed">
+        <item quantity="one">%1$s ಪರೀಕ್ಷೆ ಉತ್ತೀರ್ಣ</item>
+        <item quantity="other">ಎಲ್ಲಾ %1$s ಪರೀಕ್ಷೆಗಳು ಉತ್ತೀರ್ಣ</item>
+    </plurals>
+
+    <string name="nav_home">ಮುಖಪುಟ</string>
+    <string name="nav_trends">ಪ್ರವೃತ್ತಿ</string>
+    <string name="nav_report">ದೂರು</string>
+    <string name="nav_profile">ಪ್ರೊಫೈಲ್</string>
+
+    <string name="day_mon">ಸೋಮ</string>
+    <string name="day_tue">ಮಂಗಳ</string>
+    <string name="day_wed">ಬುಧ</string>
+    <string name="day_thu">ಗುರು</string>
+    <string name="day_fri">ಶುಕ್ರ</string>
+    <string name="day_sat">ಶನಿ</string>
+    <string name="day_sun">ಭಾನು</string>
+
+    <!-- ===== ತೀರ್ಪು ===== -->
+    <string name="verdict_safe">ಕುಡಿಯಲು ಸುರಕ್ಷಿತ</string>
+    <string name="verdict_boil">ಕುಡಿಯುವ ಮೊದಲು ಕುದಿಸಿ</string>
+    <string name="verdict_unsafe">ಕುಡಿಯಬೇಡಿ</string>
+    <string name="verdict_unknown">ಸಾಕಷ್ಟು ಅಳತೆಗಳಿಲ್ಲ</string>
+    <string name="grade_crystal_clear">ಸಂಪೂರ್ಣ ಸ್ವಚ್ಛ</string>
+    <string name="grade_good">ಒಳ್ಳೆಯದು</string>
+    <string name="grade_fair">ಪರವಾಗಿಲ್ಲ</string>
+    <string name="grade_poor">ಕೆಟ್ಟದು</string>
+
+    <!-- ===== ಮಾಪನಗಳು ===== -->
+    <string name="param_ph">ಪಿಎಚ್ ಸಮತೋಲನ</string>
+    <string name="param_ph_note">ತಟಸ್ಥ · ಸೂಕ್ತ 6.5–8.5</string>
+    <string name="param_tds">ಕರಗಿದ ಘನವಸ್ತುಗಳು</string>
+    <string name="param_tds_note">ppm · 500 ಕ್ಕಿಂತ ಬಹಳ ಕಡಿಮೆ</string>
+    <string name="param_turbidity">ಕದಡುವಿಕೆ</string>
+    <string name="param_chlorine">ಕ್ಲೋರಿನ್</string>
+    <string name="param_hardness">ಗಡಸುತನ</string>
+    <string name="param_ecoli">ಇ. ಕೊಲೈ</string>
+    <string name="param_temperature">ನೀರಿನ ಉಷ್ಣತೆ</string>
+
+    <string name="unit_ntu">NTU</string>
+    <string name="unit_mgl">ಮಿ.ಗ್ರಾಂ./ಲೀ.</string>
+    <string name="unit_cfu">CFU</string>
+    <string name="unit_ppm">ppm</string>
+    <string name="unit_celsius">°ಸೆ.</string>
+
+    <string name="status_clear">ಸ್ವಚ್ಛ</string>
+    <string name="status_within_limit">ಮಿತಿಯೊಳಗೆ</string>
+    <string name="status_soft">ಮೃದು</string>
+    <string name="status_hard">ಗಡಸು</string>
+    <string name="status_not_detected">ಕಂಡುಬಂದಿಲ್ಲ</string>
+    <string name="status_detected">ಕಂಡುಬಂದಿದೆ</string>
+    <string name="status_high">ಹೆಚ್ಚು</string>
+    <string name="status_low">ಕಡಿಮೆ</string>
+    <string name="status_not_reading">ಅಳತೆ ಇಲ್ಲ</string>
+
+    <!-- ===== ಯಾವಾಗ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ ===== -->
+    <string name="tested_just_now">ಈಗಷ್ಟೇ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</string>
+    <plurals name="tested_minutes_ago">
+        <item quantity="one">%1$s ನಿಮಿಷದ ಹಿಂದೆ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</item>
+        <item quantity="other">%1$s ನಿಮಿಷಗಳ ಹಿಂದೆ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</item>
+    </plurals>
+    <plurals name="tested_hours_ago">
+        <item quantity="one">%1$s ಗಂಟೆಯ ಹಿಂದೆ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</item>
+        <item quantity="other">%1$s ಗಂಟೆಗಳ ಹಿಂದೆ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</item>
+    </plurals>
+    <plurals name="tested_days_ago">
+        <item quantity="one">%1$s ದಿನದ ಹಿಂದೆ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</item>
+        <item quantity="other">%1$s ದಿನಗಳ ಹಿಂದೆ ಪರೀಕ್ಷಿಸಲಾಗಿದೆ</item>
+    </plurals>
+
+    <!-- ===== ಪ್ರಕಟಣೆಗಳು ===== -->
+    <string name="notice_tanker_check_title">ಮುಂದಿನ ಟ್ಯಾಂಕರ್ ತಪಾಸಣೆ · ಗುರುವಾರ ಬೆಳಿಗ್ಗೆ 6</string>
+    <string name="notice_tanker_check_body">ರುಚಿ, ವಾಸನೆ ಅಥವಾ ಬಣ್ಣ ಬದಲಾದರೆ ಯಾವಾಗ ಬೇಕಾದರೂ ತಿಳಿಸಿ.</string>
+
+    <string name="channel_advisory">ಜಲ ಸುರಕ್ಷತಾ ಎಚ್ಚರಿಕೆಗಳು</string>
+    <string name="channel_advisory_description">ನಿಮ್ಮ ಗ್ರಾಮದ ನೀರು ಕುಡಿಯಲು ಯೋಗ್ಯವಲ್ಲದಿದ್ದರೆ ತುರ್ತು ಎಚ್ಚರಿಕೆ.</string>
+    <string name="channel_updates">ಅಂಕ ನವೀಕರಣಗಳು</string>
+    <string name="channel_updates_description">ದೈನಂದಿನ ಜಲ ಅಂಕದ ಬದಲಾವಣೆ ಮತ್ತು ನಿಗದಿತ ಟ್ಯಾಂಕರ್ ತಪಾಸಣೆ.</string>
+
+    <!-- ===== ಪರದೆ 05 · ಪ್ರವೃತ್ತಿ ===== -->
+    <string name="trends_title">ಜಲ ಪ್ರವೃತ್ತಿ</string>
+    <string name="trend_improving">ಸುಧಾರಿಸುತ್ತಿದೆ</string>
+    <string name="trend_steady">ಸ್ಥಿರ</string>
+    <string name="trend_declining">ಕುಸಿಯುತ್ತಿದೆ</string>
+    <string name="range_7d">7ದಿ</string>
+    <string name="range_30d">30ದಿ</string>
+    <string name="range_1y">1ವ</string>
+    <string name="range_label_week">ಈ ವಾರ</string>
+    <string name="range_label_month">ಈ ತಿಂಗಳು</string>
+    <string name="range_label_year">ಈ ವರ್ಷ</string>
+    <string name="trends_average_score">ಸರಾಸರಿ ಅಂಕ · %1$s</string>
+    <string name="trends_peak_low">ಗರಿಷ್ಠ %1$s · ಕನಿಷ್ಠ %2$s</string>
+    <string name="trends_no_unsafe_days">ಅಸುರಕ್ಷಿತ ದಿನಗಳಿಲ್ಲ</string>
+    <string name="trends_parameter_movement">ಮಾಪನಗಳಲ್ಲಿ ಬದಲಾವಣೆ</string>
+    <string name="trends_delta_steady">ಸ್ಥಿರ</string>
+    <string name="trends_monthly_title">ತಿಂಗಳ ಸುರಕ್ಷಿತ ದಿನಗಳು</string>
+    <string name="trends_monthly_subtitle">ಅಂಕ 70 ಕ್ಕಿಂತ ಮೇಲಿದ್ದ ದಿನಗಳು</string>
+    <plurals name="trends_unsafe_days">
+        <item quantity="one">%1$s ಅಸುರಕ್ಷಿತ ದಿನ</item>
+        <item quantity="other">%1$s ಅಸುರಕ್ಷಿತ ದಿನಗಳು</item>
+    </plurals>
+
+    <!-- ===== ಪರದೆ 06 · ದೂರು ===== -->
+    <string name="report_title">ನೀರಿನ ದೂರು</string>
+    <string name="report_source_line">%1$s · %2$s</string>
+    <string name="report_tester_notice">ಪ್ರತಿ ದೂರಿನ %1$s ಒಳಗೆ ಕ್ಷೇತ್ರ ಪರೀಕ್ಷಕರು ಬರುತ್ತಾರೆ.</string>
+    <string name="report_tester_window">24 ಗಂಟೆಗಳ</string>
+    <string name="report_question_issue">ನೀವು ಏನು ಗಮನಿಸಿದಿರಿ?</string>
+    <string name="report_question_severity">ಇದು ಎಷ್ಟು ಗಂಭೀರವಾಗಿದೆ?</string>
+    <string name="report_note_label">ಟಿಪ್ಪಣಿ ಬರೆಯಿರಿ</string>
+    <string name="report_note_placeholder">ನೀವು ಗಮನಿಸಿದ್ದನ್ನು ಬರೆಯಿರಿ — ಯಾವಾಗಿನಿಂದ, ಯಾವ ನಲ್ಲಿ ಅಥವಾ ಕೈಪಂಪ್.</string>
+    <string name="report_note_counter">%1$s / %2$s</string>
+    <string name="report_add_photo">ಫೋಟೋ ಸೇರಿಸಿ</string>
+    <string name="report_photo_attached">ನೀರಿನ ಮಾದರಿಯ ಫೋಟೋ</string>
+    <string name="report_remove_photo">ತೆಗೆದುಹಾಕಿ</string>
+    <string name="report_submit">ದೂರು ಕಳುಹಿಸಿ</string>
+    <string name="report_sending">ಕಳುಹಿಸಲಾಗುತ್ತಿದೆ…</string>
+    <string name="report_sent">ದೂರು ಕಳುಹಿಸಲಾಗಿದೆ. 24 ಗಂಟೆಗಳಲ್ಲಿ ಪರೀಕ್ಷಕರು ಬರುತ್ತಾರೆ.</string>
+    <string name="report_failed">ದೂರು ಕಳುಹಿಸಲಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸುವವರೆಗೆ ಅದು ಇಲ್ಲಿಯೇ ಇರುತ್ತದೆ.</string>
+    <string name="report_recent">ನಿಮ್ಮ ಇತ್ತೀಚಿನ ದೂರುಗಳು</string>
+    <string name="report_none_yet">ನೀವು ಇನ್ನೂ ಯಾವುದೇ ದೂರು ನೀಡಿಲ್ಲ.</string>
+
+    <string name="issue_taste">ರುಚಿ ಕೆಟ್ಟಿದೆ</string>
+    <string name="issue_odour">ದುರ್ವಾಸನೆ</string>
+    <string name="issue_colour">ಬಣ್ಣ</string>
+    <string name="issue_no_supply">ನೀರು ಬರುತ್ತಿಲ್ಲ</string>
+    <string name="issue_illness">ಅನಾರೋಗ್ಯ</string>
+    <string name="issue_other">ಇತರೆ</string>
+
+    <string name="severity_minor">ಸಣ್ಣದು</string>
+    <string name="severity_concerning">ಆತಂಕಕಾರಿ</string>
+    <string name="severity_urgent">ತುರ್ತು</string>
+
+    <string name="report_status_open">ಬಾಕಿ</string>
+    <string name="report_status_resolved">ಪರಿಹರಿಸಲಾಗಿದೆ</string>
+    <string name="report_status_closed">ಮುಚ್ಚಲಾಗಿದೆ</string>
+
+    <string name="source_handpump">ಕೈಪಂಪ್ %1$s</string>
+    <string name="source_tap_line">ನಲ್ಲಿ ಸಾಲು %1$s</string>
+    <string name="source_well">ಬಾವಿ %1$s</string>
+    <string name="source_tank">ಟ್ಯಾಂಕ್ %1$s</string>
+
+    <!-- ===== ಪರದೆ 07 · ಪ್ರೊಫೈಲ್ ===== -->
+    <string name="profile_eyebrow">ಪ್ರೊಫೈಲ್</string>
+    <string name="action_edit">ಬದಲಿಸಿ</string>
+    <string name="profile_verified">ಪರಿಶೀಲಿಸಲಾಗಿದೆ</string>
+    <string name="profile_stat_reports">ಸಲ್ಲಿಸಿದ ದೂರುಗಳು</string>
+    <string name="profile_stat_score">ಗ್ರಾಮದ ಅಂಕ</string>
+    <string name="profile_stat_member_since">ಯಾವಾಗಿನಿಂದ ಸದಸ್ಯ</string>
+    <string name="profile_months_short">%1$s ತಿಂಗಳು</string>
+    <string name="setting_language">ಭಾಷೆ</string>
+    <string name="setting_language_sub">ಎಚ್ಚರಿಕೆಗಳು ಮತ್ತು ಸಲಹೆಗಳು</string>
+    <string name="setting_village">ಗ್ರಾಮ</string>
+    <string name="setting_village_sub">ಈ ಖಾತೆಗೆ ಜೋಡಿಸಲಾಗಿದೆ</string>
+    <string name="setting_household">ಮನೆಯ ಸದಸ್ಯರು</string>
+    <string name="setting_household_sub">ಪೂರೈಕೆ ಯೋಜನೆಗಾಗಿ</string>
+    <string name="setting_source">ನೀರಿನ ಮೂಲ</string>
+    <string name="setting_source_sub">ಮುಖ್ಯವಾಗಿ ನೀರು ತೆಗೆದುಕೊಳ್ಳುವ ಸ್ಥಳ</string>
+    <string name="profile_alerts_title">ಅಸುರಕ್ಷಿತ ನೀರಿನ ಎಚ್ಚರಿಕೆಗಳು</string>
+    <string name="profile_alerts_subtitle">ಅಂಕ 70 ಕ್ಕಿಂತ ಕೆಳಗಿಳಿದಾಗ SMS ಮತ್ತು ಅಧಿಸೂಚನೆ.</string>
+    <string name="help_guide">ಸಹಾಯ ಮತ್ತು ಜಲ ಸುರಕ್ಷತಾ ಮಾರ್ಗದರ್ಶಿ</string>
+    <string name="help_contact">ಗ್ರಾಮ ಪಂಚಾಯತ್ ಸಂಪರ್ಕಿಸಿ</string>
+    <string name="help_privacy">ಗೌಪ್ಯತೆ ಮತ್ತು ನಿಯಮಗಳು</string>
+    <string name="action_sign_out">ಸೈನ್ ಔಟ್</string>
+    <string name="profile_footer">ಜಲರಕ್ಷಾ v%1$s · ಜಲ್ ಜೀವನ್ ಮಿಷನ್</string>
+
+    <string name="unit_ph">ಪಿಎಚ್</string>
+</resources>
