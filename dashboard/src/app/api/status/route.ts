@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { DEFAULT_DEVICE_ID, SENSOR_ORDER } from "@/lib/config";
+import { DEFAULT_DEVICE_ID, SENSOR_COUNT, SENSOR_ORDER } from "@/lib/config";
+import { relayViews } from "@/lib/relays";
 import { deviceStateFor, sensorHealth } from "@/lib/derive";
 import { getReadings, latestReading, readingCount } from "@/lib/store";
 
@@ -31,5 +32,12 @@ export async function GET() {
     total: readingCount(),
     sensors,
     sensorsOk: SENSOR_ORDER.filter((k) => sensors[k].ok).length,
+    sensorCount: SENSOR_COUNT,
+    relays: relayViews(now).map((r) => ({
+      id: r.id,
+      name: r.name,
+      desired: r.desired,
+      actual: r.actual,
+    })),
   });
 }

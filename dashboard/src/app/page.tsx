@@ -5,14 +5,16 @@ import { bandBg, bandColor, deviceDot, deviceLabel } from "@/lib/bandStyle";
 import {
   BAND_LABEL,
   SENSORS,
-  TURBIDITY_VOLTS,
+  SENSOR_COUNT,
+  SENSOR_ORDER,
   bandOfScore,
-  bandOfValue,
   riskScore,
 } from "@/lib/config";
-import { ageLabel, deviceStateFor, sensorHealth } from "@/lib/derive";
+import { sensorViews } from "@/lib/display";
+import { ageLabel, deviceStateFor } from "@/lib/derive";
 import ConnectionBanner from "@/components/ConnectionBanner";
 import IngestHelp from "@/components/IngestHelp";
+import PumpControls from "@/components/PumpControls";
 import RiskDial from "@/components/RiskDial";
 import SensorCard from "@/components/SensorCard";
 import SensorStatus from "@/components/SensorStatus";
@@ -27,26 +29,11 @@ export default function OverviewPage() {
   const latest = readings.length ? readings[readings.length - 1] : null;
   const state = deviceStateFor(latest, now);
 
-  const tempBand = latest?.tempC != null ? bandOfValue(latest.tempC, SENSORS.temperature) : "safe";
-  const turbBand =
-    latest?.turbidityNtu != null ? bandOfValue(latest.turbidityNtu, SENSORS.turbidity) : "safe";
-  const score = latest ? riskScore(latest.tempC, latest.turbidityNtu) : 0;
+  const views = sensorViews(readings, SENSOR_ORDER, state);
+  const score = riskScore(latest);
   const scoreBand = bandOfScore(score);
-
-  const tempHealth = sensorHealth(readings, "temperature", state);
-  const turbHealth = sensorHealth(readings, "turbidity", state);
-  const liveSensors = [tempHealth, turbHealth].filter((h) => h.ok).length;
-
-  const tempPoints = readings.map((r) => ({ t: r.t, v: r.tempC }));
-
-  // Chart whichever turbidity signal is actually meaningful right now — a
-  // clamped NTU value would draw a flat line and look like a dead feed.
-  const showVolts = latest?.turbidityNtu == null;
-  const turbSpec = showVolts ? TURBIDITY_VOLTS : SENSORS.turbidity;
-  const turbPoints = readings.map((r) => ({
-    t: r.t,
-    v: showVolts ? r.turbidityV : r.turbidityNtu,
-  }));
+  const liveSensors = views.filter((v) => v.health.ok).length;
+  const allLive = liveSensors === SENSOR_COUNT;
 
   if (loading) {
     return (
@@ -75,55 +62,19 @@ export default function OverviewPage() {
     );
   }
 
-  const kpis = [
-    {
-      label: SENSORS.temperature.name,
-      value: tempHealth.ok ? latest.tempC!.toFixed(2) : "—",
-      unit: tempHealth.ok ? "°C" : "",
-      color: tempHealth.ok ? bandColor[tempBand] : "var(--muted-2)",
-      sub: tempHealth.ok
-        ? `${BAND_LABEL[tempBand]} · normal ${SENSORS.temperature.safe[0]}–${SENSORS.temperature.safe[1]} °C`
-        : tempHealth.label,
-      faulted: !tempHealth.ok,
-    },
-    {
-      // When NTU is off scale the voltage is the only real number we have, so
-      // show that rather than a dash.
-      label: turbHealth.ok ? SENSORS.turbidity.name : "Turbidity probe",
-      value: turbHealth.ok
-        ? latest.turbidityNtu!.toFixed(1)
-        : latest.turbidityV != null
-          ? latest.turbidityV.toFixed(3)
-          : "—",
-      unit: turbHealth.ok ? "NTU" : latest.turbidityV != null ? "V" : "",
-      color: turbHealth.ok ? bandColor[turbBand] : "var(--critical)",
-      sub: turbHealth.ok
-        ? `${BAND_LABEL[turbBand]} · probe at ${latest.turbidityV!.toFixed(3)} V`
-        : turbHealth.label,
-      faulted: !turbHealth.ok,
-    },
-    {
-      label: "Composite risk",
-      value: String(score),
-      unit: "/100",
-      color: bandColor[scoreBand],
-      sub:
-        liveSensors === 2
-          ? `${BAND_LABEL[scoreBand]} band · both sensors combined`
-          : liveSensors === 1
-            ? `${BAND_LABEL[scoreBand]} band · from 1 sensor only`
-            : "no sensor reporting",
-      faulted: liveSensors < 2,
-    },
-    {
-      label: "Sensors reading",
-      value: `${liveSensors}/2`,
-      unit: "",
-      color: liveSensors === 2 ? "var(--safe)" : "var(--critical)",
-      sub: `${readings.length} samples · ${ageLabel(latest.t, now)}`,
-      faulted: liveSensors < 2,
-    },
-  ];
+  // One KPI per sensor, plus the composite. A faulted probe shows its raw
+  // voltage rather than a dash — a live-but-uncalibrated signal is still
+  // information, and a dash looks like the same failure as a dead node.
+  const kpis = views.map((v) => ({
+    label: v.showingVolts ? `${SENSORS[v.key].name} (raw)` : SENSORS[v.key].name,
+    value: v.value === null ? "—" : v.value.toFixed(v.spec.decimals),
+    unit: v.value === null ? "" : v.spec.unit,
+    color: v.health.ok ? bandColor[v.band] : "var(--critical)",
+    sub: v.health.ok
+      ? `${BAND_LABEL[v.band]} · normal ${v.spec.safe[0]}–${v.spec.safe[1]} ${v.spec.unit}`
+      : v.health.label,
+    faulted: !v.health.ok,
+  }));
 
   return (
     <div className="page-inner">
@@ -154,8 +105,8 @@ export default function OverviewPage() {
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {/* A clean bill of health is only claimable when both probes are answering. */}
-          {liveSensors === 2 ? (
+          {/* A clean bill of health is only claimable when every probe answers. */}
+          {allLive ? (
             <StatusPill band={scoreBand} label={`${BAND_LABEL[scoreBand]} · risk ${score}`} />
           ) : (
             <span
@@ -164,7 +115,7 @@ export default function OverviewPage() {
             >
               {liveSensors === 0
                 ? "No sensor coverage"
-                : `Partial coverage · ${liveSensors}/2 sensors`}
+                : `Partial coverage · ${liveSensors}/${SENSOR_COUNT} sensors`}
             </span>
           )}
           <span className="pill pill-neutral">
@@ -185,7 +136,7 @@ export default function OverviewPage() {
 
       <div
         className="grid"
-        style={{ gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", marginBottom: 26 }}
+        style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", marginBottom: 14 }}
       >
         {kpis.map((k) => (
           <div
@@ -214,6 +165,41 @@ export default function OverviewPage() {
 
       <div
         className="grid"
+        style={{ gridTemplateColumns: "repeat(auto-fit,minmax(190px,1fr))", marginBottom: 26 }}
+      >
+        <div className="card card-pad">
+          <div className="eyebrow">Composite risk</div>
+          <div className="figure" style={{ marginTop: 8, color: bandColor[scoreBand] }}>
+            {score}
+            <span style={{ fontSize: 15, color: "var(--muted-2)", marginLeft: 4 }}>/100</span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+            {allLive
+              ? `${BAND_LABEL[scoreBand]} band · all ${SENSOR_COUNT} sensors combined`
+              : liveSensors > 0
+                ? `${BAND_LABEL[scoreBand]} band · from ${liveSensors} of ${SENSOR_COUNT} sensors`
+                : "no sensor reporting"}
+          </div>
+        </div>
+        <div className="card card-pad">
+          <div className="eyebrow">Sensors reading</div>
+          <div
+            className="figure"
+            style={{ marginTop: 8, color: allLive ? "var(--safe)" : "var(--critical)" }}
+          >
+            {liveSensors}
+            <span style={{ fontSize: 15, color: "var(--muted-2)", marginLeft: 4 }}>
+              /{SENSOR_COUNT}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+            {readings.length} samples · {ageLabel(latest.t, now)}
+          </div>
+        </div>
+      </div>
+
+      <div
+        className="grid"
         style={{ gridTemplateColumns: "minmax(0,2fr) minmax(280px,1fr)", alignItems: "start" }}
       >
         <div className="grid" style={{ gridTemplateColumns: "1fr", alignContent: "start" }}>
@@ -230,28 +216,22 @@ export default function OverviewPage() {
               Live monitoring →
             </Link>
           </div>
-          <SensorCard
-            spec={SENSORS.temperature}
-            data={tempPoints}
-            value={latest.tempC}
-            band={tempBand}
-            health={tempHealth}
-          />
-          <SensorCard
-            spec={turbSpec}
-            data={turbPoints}
-            value={showVolts ? latest.turbidityV : latest.turbidityNtu}
-            band={
-              showVolts && latest.turbidityV != null
-                ? bandOfValue(latest.turbidityV, TURBIDITY_VOLTS)
-                : turbBand
-            }
-            health={turbHealth}
-            secondary={showVolts ? "NTU off scale" : `${latest.turbidityV!.toFixed(3)} V`}
-          />
+          {views.map((v) => (
+            <SensorCard
+              key={v.key}
+              spec={v.spec}
+              data={v.points}
+              value={v.value}
+              band={v.band}
+              health={v.health}
+              secondary={v.secondary}
+            />
+          ))}
         </div>
 
         <div className="grid" style={{ gridTemplateColumns: "1fr", alignContent: "start" }}>
+          <PumpControls deviceState={state} now={now} />
+
           <div
             className="card card-pad"
             style={{ display: "flex", gap: 16, alignItems: "center" }}
@@ -260,21 +240,21 @@ export default function OverviewPage() {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>Composite risk</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
-                {liveSensors === 2
-                  ? "Combined severity of temperature and turbidity. Either sensor alone can drive it."
-                  : liveSensors === 1
-                    ? "Scored from one sensor only — the other is not reading, so this understates the real risk."
-                    : "Neither sensor is reporting, so there is nothing to score."}
+                {allLive
+                  ? "Combined severity of every probe. Any one of them alone can drive it."
+                  : liveSensors > 0
+                    ? `Scored from ${liveSensors} of ${SENSOR_COUNT} probes — the rest are not reading, so this understates the real risk.`
+                    : "No probe is reporting, so there is nothing to score."}
               </div>
               <div style={{ marginTop: 10 }}>
-                {liveSensors === 2 ? (
+                {allLive ? (
                   <StatusPill band={scoreBand} />
                 ) : (
                   <span
                     className="pill"
                     style={{ color: "var(--critical)", background: "var(--critical-bg)" }}
                   >
-                    Incomplete · {liveSensors}/2 sensors
+                    Incomplete · {liveSensors}/{SENSOR_COUNT} sensors
                   </span>
                 )}
               </div>
@@ -288,7 +268,7 @@ export default function OverviewPage() {
                 .slice(-6)
                 .reverse()
                 .map((r) => {
-                  const b = bandOfScore(riskScore(r.tempC, r.turbidityNtu));
+                  const b = bandOfScore(riskScore(r));
                   return (
                     <div
                       key={r.t}
@@ -310,8 +290,10 @@ export default function OverviewPage() {
                         }}
                       />
                       <div className="mono" style={{ fontSize: 11.5, flex: 1, minWidth: 0 }}>
-                        {r.tempC === null ? "n/d" : `${r.tempC.toFixed(2)} °C`} ·{" "}
-                        {r.turbidityNtu === null ? "n/d" : `${r.turbidityNtu.toFixed(1)} NTU`}
+                        {r.tempC === null ? "n/d" : `${r.tempC.toFixed(1)}°`} ·{" "}
+                        {r.ph === null ? "n/d" : `pH ${r.ph.toFixed(2)}`} ·{" "}
+                        {r.tds === null ? "n/d" : `${r.tds.toFixed(0)}ppm`} ·{" "}
+                        {r.turbidityNtu === null ? "n/d" : `${r.turbidityNtu.toFixed(1)}NTU`}
                       </div>
                       <div
                         className="mono"
@@ -336,7 +318,7 @@ export default function OverviewPage() {
           <div
             className="card card-pad"
             style={{
-              background: liveSensors === 2 ? bandBg[scoreBand] : "var(--critical-bg)",
+              background: allLive ? bandBg[scoreBand] : "var(--critical-bg)",
               borderColor: "transparent",
             }}
           >
@@ -344,13 +326,13 @@ export default function OverviewPage() {
               style={{
                 fontSize: 12.5,
                 fontWeight: 600,
-                color: liveSensors === 2 ? bandColor[scoreBand] : "var(--critical)",
+                color: allLive ? bandColor[scoreBand] : "var(--critical)",
               }}
             >
               {liveSensors === 0
                 ? "No sensor data to judge"
-                : liveSensors === 1
-                  ? "Partial coverage — fix the sensor before trusting this"
+                : !allLive
+                  ? "Partial coverage — fix the sensors before trusting this"
                   : scoreBand === "safe"
                     ? "Water quality within limits"
                     : scoreBand === "watch"
@@ -360,8 +342,15 @@ export default function OverviewPage() {
                         : "Critical — dispatch a field check"}
             </div>
             <div style={{ fontSize: 11.5, color: "var(--ink-2)", marginTop: 6, lineHeight: 1.55 }}>
-              Temperature {tempHealth.ok ? BAND_LABEL[tempBand].toLowerCase() : "not reading"},
-              turbidity {turbHealth.ok ? BAND_LABEL[turbBand].toLowerCase() : "not reading"}.
+              {views
+                .map(
+                  (v) =>
+                    `${SENSORS[v.key].name.toLowerCase()} ${
+                      v.health.ok ? BAND_LABEL[v.band].toLowerCase() : "not reading"
+                    }`,
+                )
+                .join(", ")}
+              .
             </div>
           </div>
         </div>

@@ -4,10 +4,18 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { deviceDot, deviceLabel } from "@/lib/bandStyle";
-import { DEVICE_LABEL } from "@/lib/config";
+import { DEVICE_LABEL, RELAYS, SENSOR_COUNT } from "@/lib/config";
 import { ageLabel } from "@/lib/derive";
 import type { DeviceState } from "@/lib/types";
 import { NavIcon } from "./icons";
+
+/** Short labels for the sidebar list — "Ph" and "Tds" are not words. */
+const SENSOR_NAME: Record<string, string> = {
+  temperature: "Temperature",
+  ph: "pH",
+  tds: "TDS",
+  turbidity: "Turbidity",
+};
 
 const NAV = [
   {
@@ -89,7 +97,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.2 }}>{DEVICE_LABEL}</div>
             <div style={{ fontSize: 10, color: "var(--muted)" }}>
-              1 node · 2 sensors
+              1 node · {SENSOR_COUNT} sensors · {RELAYS.length} pumps
             </div>
           </div>
         </div>
@@ -145,7 +153,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ textTransform: "capitalize" }}>{key}</span>
+                <span>{SENSOR_NAME[key] ?? key}</span>
                 <span
                   style={{
                     marginLeft: "auto",
@@ -212,12 +220,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <span
                 className="pill"
                 style={
-                  status.sensorsOk === 2
+                  status.sensorsOk === SENSOR_COUNT
                     ? { color: "var(--safe)", background: "var(--safe-bg)" }
                     : { color: "var(--critical)", background: "var(--critical-bg)" }
                 }
               >
-                {status.sensorsOk}/2 sensors
+                {status.sensorsOk}/{SENSOR_COUNT} sensors
               </span>
             )}
             <span className="pill pill-accent mono">{status?.total ?? 0} readings</span>

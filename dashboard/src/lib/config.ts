@@ -1,4 +1,4 @@
-import type { Band, SensorKey } from "./types";
+import type { Band, Reading, RelayId, SensorKey } from "./types";
 
 /**
  * Everything tunable lives here so the firmware and the dashboard can be
@@ -55,6 +55,77 @@ export function voltsToNtu(volts: number): number | null {
   return Math.round(Math.max(0, Math.min(TURBIDITY_MAX_NTU, ntu)) * 10) / 10;
 }
 
+/* ------------------------------------------------------------------ *
+ * pH calibration
+ *
+ * The analog pH board (PH4502C / SEN0161 family) outputs a voltage that
+ * FALLS as the water gets more alkaline. Two anchors define the line:
+ * the voltage in pH 7.00 buffer, and how many volts one pH unit is worth.
+ *
+ * Factory-typical numbers are below. They are a starting point, not a
+ * calibration — dip the probe in pH 7.00 buffer, read the volts on Live
+ * Monitoring, and put that number in PH_NEUTRAL_V. For the slope, repeat
+ * in pH 4.00 buffer: PH_VOLTS_PER_UNIT = (V_at_4 − V_at_7) / 3.
+ * ------------------------------------------------------------------ */
+export const PH_NEUTRAL_V = 2.5; // volts in pH 7.00 buffer
+export const PH_VOLTS_PER_UNIT = 0.19; // volts per pH unit (falling with pH)
+
+/**
+ * What a wired pH board can actually put out. A floating ADS1115 input drifts
+ * near zero, which is how a disconnected AOUT shows up.
+ *
+ * The ceiling is deliberately just above the ADS1115's own 3.3 V supply: if
+ * the pH board is powered from 5 V its output can exceed the ADC's rail, which
+ * both saturates the reading and stresses the input. Seeing values pinned up
+ * here means "check the probe's supply", not "the water is acidic".
+ */
+export const PH_MIN_VALID_V = 0.08;
+export const PH_MAX_VALID_V = 3.4;
+
+export function isPhPlausible(volts: number): boolean {
+  return volts >= PH_MIN_VALID_V && volts <= PH_MAX_VALID_V;
+}
+
+export function voltsToPh(volts: number): number | null {
+  if (!isPhPlausible(volts)) return null;
+  const ph = 7 + (PH_NEUTRAL_V - volts) / PH_VOLTS_PER_UNIT;
+  // Outside 0–14 the arithmetic still returns a number, but it isn't a pH.
+  if (ph < 0 || ph > 14) return null;
+  return Math.round(ph * 100) / 100;
+}
+
+/* ------------------------------------------------------------------ *
+ * TDS calibration
+ *
+ * DFRobot's gravity TDS probe, using their published cubic against the
+ * probe voltage, with temperature compensation from the DS18B20. The
+ * K factor is the one thing worth calibrating: put the probe in a solution
+ * of known ppm and scale TDS_K until the reading matches.
+ * ------------------------------------------------------------------ */
+export const TDS_K = 1.0;
+/** The probe's output span. Dry or unplugged both sit at the bottom. */
+export const TDS_MIN_VALID_V = 0.02;
+export const TDS_MAX_VALID_V = 2.6;
+
+export function isTdsPlausible(volts: number): boolean {
+  return volts >= TDS_MIN_VALID_V && volts <= TDS_MAX_VALID_V;
+}
+
+/**
+ * Conductivity rises with temperature, so the same water reads higher when
+ * warm. Without the DS18B20 we assume 25 °C and the number drifts with the
+ * weather — which is why the temperature probe failing degrades this one too.
+ */
+export function voltsToTds(volts: number, tempC: number | null): number | null {
+  if (!isTdsPlausible(volts)) return null;
+  const t = tempC ?? 25;
+  const compensated = volts / (1 + 0.02 * (t - 25));
+  const ppm =
+    (133.42 * compensated ** 3 - 255.86 * compensated ** 2 + 857.39 * compensated) * 0.5 * TDS_K;
+  if (!Number.isFinite(ppm) || ppm < 0) return null;
+  return Math.round(ppm * 10) / 10;
+}
+
 /** Chartable spec for the raw probe voltage — the honest signal while uncalibrated. */
 export const TURBIDITY_VOLTS: SensorSpec = {
   key: "turbidity",
@@ -68,8 +139,37 @@ export const TURBIDITY_VOLTS: SensorSpec = {
   blurb: "raw AOUT, 10k/15k divider undone",
 };
 
+/** Same idea for pH: the voltage is real even when the calibration isn't. */
+export const PH_VOLTS: SensorSpec = {
+  key: "ph",
+  name: "pH (probe voltage)",
+  unit: "V",
+  decimals: 3,
+  safe: [PH_NEUTRAL_V - 0.3, PH_NEUTRAL_V + 0.3],
+  watch: [PH_NEUTRAL_V - 0.6, PH_NEUTRAL_V + 0.6],
+  warning: [PH_MIN_VALID_V, PH_MAX_VALID_V],
+  extent: [0, 3.6],
+  blurb: "raw AOUT on ADS1115 A0",
+};
+
+export const TDS_VOLTS: SensorSpec = {
+  key: "tds",
+  name: "TDS (probe voltage)",
+  unit: "V",
+  decimals: 3,
+  safe: [0.05, 1.0],
+  watch: [0.02, 1.6],
+  warning: [0, TDS_MAX_VALID_V],
+  extent: [0, 2.6],
+  blurb: "raw AOUT on ADS1115 A1",
+};
+
 /* ------------------------------------------------------------------ *
  * Banding
+ *
+ * Drinking-water limits follow IS 10500:2012 — the "acceptable" figure is
+ * the safe band, the "permissible in the absence of an alternate source"
+ * figure is where warning ends.
  * ------------------------------------------------------------------ */
 
 export type SensorSpec = {
@@ -98,11 +198,37 @@ export const SENSORS: Record<SensorKey, SensorSpec> = {
     extent: [0, 45],
     blurb: "DS18B20 · 1-Wire on GPIO4",
   },
+  ph: {
+    key: "ph",
+    name: "pH",
+    unit: "pH",
+    decimals: 2,
+    // IS 10500 acceptable: 6.5–8.5. No permissible relaxation is allowed for pH.
+    safe: [6.5, 8.5],
+    watch: [6.0, 9.0],
+    warning: [5.0, 10.0],
+    extent: [0, 14],
+    blurb: "Analog probe · ADS1115 A0 (uncalibrated)",
+  },
+  tds: {
+    key: "tds",
+    name: "Total dissolved solids",
+    unit: "ppm",
+    decimals: 0,
+    // IS 10500: 500 acceptable, 2000 permissible without an alternate source.
+    safe: [0, 500],
+    watch: [0, 1000],
+    warning: [0, 2000],
+    extent: [0, 2000],
+    blurb: "Analog probe · ADS1115 A1 (temp-compensated)",
+  },
   turbidity: {
     key: "turbidity",
     name: "Turbidity",
     unit: "NTU",
     decimals: 1,
+    // IS 10500: 1 NTU acceptable, 5 permissible. The safe band is widened to 5
+    // because this probe cannot resolve a single NTU without calibration.
     safe: [0, 5],
     watch: [0, 10],
     warning: [0, 25],
@@ -112,7 +238,38 @@ export const SENSORS: Record<SensorKey, SensorSpec> = {
   },
 };
 
-export const SENSOR_ORDER: SensorKey[] = ["temperature", "turbidity"];
+export const SENSOR_ORDER: SensorKey[] = ["temperature", "ph", "tds", "turbidity"];
+export const SENSOR_COUNT = SENSOR_ORDER.length;
+
+/* ------------------------------------------------------------------ *
+ * Pump relays
+ * ------------------------------------------------------------------ */
+
+export type RelaySpec = { id: RelayId; name: string; pin: number; blurb: string };
+
+export const RELAYS: RelaySpec[] = [
+  { id: "pump1", name: "Pump 1", pin: 14, blurb: "Relay IN1 · GPIO 14" },
+  { id: "pump2", name: "Pump 2", pin: 18, blurb: "Relay IN2 · GPIO 18" },
+];
+
+/**
+ * A pump left running is the one thing on this board that can do physical
+ * damage — an overflowing tank, or a dry-running motor burning itself out.
+ * There is no float switch wired to stop it, so the only backstop is a clock.
+ * The server drops the command after this long, and the firmware runs the same
+ * timer independently so a dead dashboard cannot leave a motor on.
+ */
+export const PUMP_MAX_RUN_MS = 5 * 60_000;
+
+/**
+ * If the node cannot reach the dashboard for this long it turns both relays
+ * off by itself. Losing contact with a running pump is exactly when you least
+ * want it latched on.
+ */
+export const PUMP_COMMS_FAILSAFE_MS = 30_000;
+
+/** How often the firmware asks the server what the relays should be doing. */
+export const PUMP_POLL_MS = 1_000;
 
 export function bandOfValue(value: number, spec: SensorSpec): Band {
   if (value >= spec.safe[0] && value <= spec.safe[1]) return "safe";
@@ -136,16 +293,35 @@ export function severity(value: number, spec: SensorSpec): number {
   return Math.min(1, 0.65 + ((d - toWatch - toWarn) / toWarn) * 0.35);
 }
 
+/** The calibrated value each sensor contributes to scoring, or null. */
+export function scoredValue(r: Reading, key: SensorKey): number | null {
+  switch (key) {
+    case "temperature":
+      return r.tempC;
+    case "ph":
+      return r.ph;
+    case "tds":
+      return r.tds;
+    case "turbidity":
+      return r.turbidityNtu;
+  }
+}
+
 /**
- * Composite risk, 0–100. Probabilistic OR of the two severities, so either
- * sensor going critical on its own is enough to light up the network.
+ * Composite risk, 0–100. Probabilistic OR across every sensor that is actually
+ * reporting, so any one of them going critical is enough to light up the
+ * network — and a sensor that is down contributes nothing rather than being
+ * scored as a comfortable zero.
  */
-export function riskScore(tempC: number | null, ntu: number | null): number {
-  // A sensor that isn't reporting contributes nothing — it must not be scored
-  // as if it were reading zero, and it must not mask the other sensor either.
-  const st = tempC === null ? 0 : severity(tempC, SENSORS.temperature);
-  const su = ntu === null ? 0 : severity(ntu, SENSORS.turbidity);
-  return Math.round(100 * (1 - (1 - st) * (1 - su)));
+export function riskScore(reading: Reading | null): number {
+  if (!reading) return 0;
+  let intact = 1;
+  for (const key of SENSOR_ORDER) {
+    const v = scoredValue(reading, key);
+    if (v === null) continue;
+    intact *= 1 - severity(v, SENSORS[key]);
+  }
+  return Math.round(100 * (1 - intact));
 }
 
 export function bandOfScore(score: number): Band {

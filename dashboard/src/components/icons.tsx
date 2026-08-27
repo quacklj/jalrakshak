@@ -48,6 +48,34 @@ export function NavIcon({ id, size = 16 }: { id: string; size?: number }) {
           <path d="M9 7.4v4.4" />
         </svg>
       );
+    case "ph":
+      // A dropper over a graduated scale — the gesture of a titration.
+      return (
+        <svg {...p}>
+          <path d="M11.4 2.2l4.4 4.4-6.1 6.1a1.6 1.6 0 0 1-.8.44l-3.3.74.74-3.3c.06-.3.22-.58.44-.8z" />
+          <path d="M2 15.8h5" />
+        </svg>
+      );
+    case "tds":
+      // Particles suspended in a body of water: what the probe is counting.
+      return (
+        <svg {...p}>
+          <path d="M2.4 12.6c1.4-1.1 2.8-1.1 4.2 0s2.8 1.1 4.2 0 2.8-1.1 4.2 0" />
+          <path d="M2.4 15.4c1.4-1.1 2.8-1.1 4.2 0s2.8 1.1 4.2 0 2.8-1.1 4.2 0" />
+          <circle cx={5.4} cy={4.6} r={1.15} />
+          <circle cx={10.4} cy={7.1} r={1.15} />
+          <circle cx={13.2} cy={3.6} r={1.15} />
+        </svg>
+      );
+    case "pump":
+      // Impeller housing with an outlet — reads as a pump at 16px.
+      return (
+        <svg {...p}>
+          <circle cx={7.6} cy={10.4} r={4.4} />
+          <path d="M7.6 10.4V6M7.6 10.4l3.5 2.2" />
+          <path d="M12 6.6h4v3.2" />
+        </svg>
+      );
     case "droplet":
       return (
         <svg {...p}>

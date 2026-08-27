@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import ConnectionBanner from "@/components/ConnectionBanner";
+import PumpControls from "@/components/PumpControls";
 import SensorCard from "@/components/SensorCard";
 import SensorStatus from "@/components/SensorStatus";
 import { useLive } from "@/components/useLive";
 import { deviceDot, deviceLabel } from "@/lib/bandStyle";
-import { SENSORS, TURBIDITY_VOLTS, bandOfValue } from "@/lib/config";
+import { SENSOR_ORDER } from "@/lib/config";
+import { sensorViews, type UnitMode } from "@/lib/display";
 import {
   ageLabel,
   connectivityTimeline,
   deviceStateFor,
   medianPeriodMs,
-  sensorHealth,
   uptimePct,
 } from "@/lib/derive";
 
@@ -23,11 +24,12 @@ const WINDOWS = [
   { label: "24 h", ms: 24 * 60 * 60 * 1000 },
 ];
 
-type TurbUnit = "auto" | "ntu" | "volts";
-
 export default function LivePage() {
   const [win, setWin] = useState(WINDOWS[1]);
-  const [turbUnit, setTurbUnit] = useState<TurbUnit>("auto");
+  // One switch for every analog probe, not just turbidity: pH and TDS have the
+  // same uncalibrated-voltage problem, and the raw volts are what you read off
+  // the bench while calibrating any of them.
+  const [unit, setUnit] = useState<UnitMode>("auto");
   const { readings, loading, streaming, now } = useLive(win.ms, 700);
 
   const latest = readings.length ? readings[readings.length - 1] : null;
@@ -35,27 +37,7 @@ export default function LivePage() {
   const state = deviceStateFor(latest, clock);
   const timeline = connectivityTimeline(readings, clock);
   const period = medianPeriodMs(readings);
-
-  const tempBand = latest?.tempC != null ? bandOfValue(latest.tempC, SENSORS.temperature) : "safe";
-  const turbBand =
-    latest?.turbidityNtu != null ? bandOfValue(latest.turbidityNtu, SENSORS.turbidity) : "safe";
-
-  const tempHealth = sensorHealth(readings, "temperature", state);
-  const turbHealth = sensorHealth(readings, "turbidity", state);
-
-  // NTU is meaningless once the probe drops off its calibrated curve, and a
-  // clamped value draws a flat line that reads as a frozen feed. Fall back to
-  // the voltage, which is always the real measurement.
-  const ntuUnavailable = latest?.turbidityNtu == null;
-  const showVolts = turbUnit === "volts" || (turbUnit === "auto" && ntuUnavailable);
-  const turbSpec = showVolts ? TURBIDITY_VOLTS : SENSORS.turbidity;
-  const turbData = readings.map((r) => ({
-    t: r.t,
-    v: showVolts ? r.turbidityV : r.turbidityNtu,
-  }));
-  const turbValue = showVolts ? (latest?.turbidityV ?? null) : (latest?.turbidityNtu ?? null);
-  const turbShownBand =
-    turbValue !== null ? bandOfValue(turbValue, turbSpec) : turbBand;
+  const views = sensorViews(readings, SENSOR_ORDER, state, unit);
 
   return (
     <div className="page-inner">
@@ -87,11 +69,11 @@ export default function LivePage() {
           {(
             [
               ["auto", "Auto"],
-              ["ntu", "NTU"],
+              ["calibrated", "Calibrated"],
               ["volts", "Volts"],
-            ] as [TurbUnit, string][]
+            ] as [UnitMode, string][]
           ).map(([k, l]) => (
-            <button key={k} data-active={turbUnit === k} onClick={() => setTurbUnit(k)}>
+            <button key={k} data-active={unit === k} onClick={() => setUnit(k)}>
               {l}
             </button>
           ))}
@@ -110,36 +92,24 @@ export default function LivePage() {
           style={{ gridTemplateColumns: "minmax(0,2fr) minmax(280px,1fr)", alignItems: "start" }}
         >
           <div className="grid" style={{ gridTemplateColumns: "1fr", alignContent: "start" }}>
-            <SensorCard
-              spec={SENSORS.temperature}
-              data={readings.map((r) => ({ t: r.t, v: r.tempC }))}
-              value={latest?.tempC ?? null}
-              band={tempBand}
-              health={tempHealth}
-              height={200}
-              axes
-            />
-            <SensorCard
-              spec={turbSpec}
-              data={turbData}
-              value={turbValue}
-              band={turbShownBand}
-              health={turbHealth}
-              secondary={
-                showVolts
-                  ? latest?.turbidityNtu != null
-                    ? `${latest.turbidityNtu.toFixed(1)} NTU`
-                    : "NTU off scale"
-                  : latest?.turbidityV != null
-                    ? `${latest.turbidityV.toFixed(3)} V raw`
-                    : undefined
-              }
-              height={200}
-              axes
-            />
+            {views.map((v) => (
+              <SensorCard
+                key={v.key}
+                spec={v.spec}
+                data={v.points}
+                value={v.value}
+                band={v.band}
+                health={v.health}
+                secondary={v.secondary}
+                height={168}
+                axes
+              />
+            ))}
           </div>
 
           <div className="grid" style={{ gridTemplateColumns: "1fr", alignContent: "start" }}>
+            <PumpControls deviceState={state} now={clock} />
+
             <div className="card" style={{ padding: 20 }}>
               <div className="eyebrow" style={{ marginBottom: 16 }}>
                 Device connectivity

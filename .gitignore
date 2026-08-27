@@ -42,3 +42,6 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Wi-Fi credentials for the ESP32 — see firmware/jalraksha_node/secrets.example.h
+secrets.h

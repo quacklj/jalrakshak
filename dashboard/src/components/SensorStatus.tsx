@@ -2,12 +2,14 @@
 
 import { bandBg, bandColor } from "@/lib/bandStyle";
 import { BAND_LABEL, SENSORS, SENSOR_ORDER, bandOfValue } from "@/lib/config";
-import { ageLabel, sensorHealth, sensorValue, type SensorHealth } from "@/lib/derive";
+import { ageLabel, sensorHealth, sensorValue, sensorVolts, type SensorHealth } from "@/lib/derive";
 import type { DeviceState, Reading, SensorKey } from "@/lib/types";
 import { BandIcon, NavIcon } from "./icons";
 
 const SENSOR_ICON: Record<SensorKey, string> = {
   temperature: "thermometer",
+  ph: "ph",
+  tds: "tds",
   turbidity: "droplet",
 };
 
@@ -35,6 +37,9 @@ function Row({
   const spec = SENSORS[sensorKey];
   const value = sensorValue(latest, sensorKey);
   const band = value === null ? null : bandOfValue(value, spec);
+  // Falls back to the raw voltage so a live-but-off-scale probe still shows a
+  // moving number instead of a dash.
+  const volts = sensorVolts(latest, sensorKey);
 
   const tone = health.ok
     ? { c: bandColor[band ?? "safe"], bg: bandBg[band ?? "safe"] }
@@ -117,9 +122,9 @@ function Row({
             {value.toFixed(spec.decimals)}
             <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 3 }}>{spec.unit}</span>
           </>
-        ) : sensorKey === "turbidity" && latest?.turbidityV != null ? (
+        ) : volts !== null ? (
           <>
-            {latest.turbidityV.toFixed(3)}
+            {volts.toFixed(3)}
             <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 3 }}>V</span>
           </>
         ) : (

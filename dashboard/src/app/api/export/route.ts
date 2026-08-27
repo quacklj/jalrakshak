@@ -15,8 +15,14 @@ export async function GET(req: Request) {
   // Faults are exported explicitly: a blank value plus a status column, so a
   // reader can't mistake "sensor was down" for "sensor read zero".
   const head =
-    "timestamp_iso,epoch_ms,device_id,temperature_c,temperature_status," +
-    "turbidity_v,turbidity_ntu,turbidity_status,rssi_dbm";
+    "timestamp_iso,epoch_ms,device_id," +
+    "temperature_c,temperature_status," +
+    "ph_v,ph,ph_status," +
+    "tds_v,tds_ppm,tds_status," +
+    "turbidity_v,turbidity_ntu,turbidity_status," +
+    "pump1,pump2,rssi_dbm";
+  const status = (v: number | null) => (v === null ? "not_detected" : "ok");
+  const relay = (v: boolean | undefined) => (v === undefined ? "" : v ? "on" : "off");
   const body = rows
     .map((r) =>
       [
@@ -24,10 +30,18 @@ export async function GET(req: Request) {
         r.t,
         r.deviceId,
         r.tempC ?? "",
-        r.tempC === null ? "not_detected" : "ok",
+        status(r.tempC),
+        r.phV ?? "",
+        r.ph ?? "",
+        status(r.ph),
+        r.tdsV ?? "",
+        r.tds ?? "",
+        status(r.tds),
         r.turbidityV ?? "",
         r.turbidityNtu ?? "",
-        r.turbidityNtu === null ? "not_detected" : "ok",
+        status(r.turbidityNtu),
+        relay(r.relays?.pump1),
+        relay(r.relays?.pump2),
         r.rssi ?? "",
       ].join(","),
     )

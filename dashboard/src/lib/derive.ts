@@ -1,11 +1,16 @@
 import {
   DEGRADED_MS,
   ONLINE_MS,
+  PH_MAX_VALID_V,
+  PH_MIN_VALID_V,
   SENSORS,
+  TDS_MAX_VALID_V,
+  TDS_MIN_VALID_V,
   TURBIDITY_CLEAR_V,
   TURBIDITY_MAX_VALID_V,
   TURBIDITY_MIN_VALID_V,
   TURBIDITY_OPAQUE_V,
+  scoredValue,
 } from "./config";
 import type { DeviceState, Reading, SensorKey } from "./types";
 
@@ -55,7 +60,22 @@ export type SensorHealth = {
 
 export function sensorValue(reading: Reading | null, key: SensorKey): number | null {
   if (!reading) return null;
-  return key === "temperature" ? reading.tempC : reading.turbidityNtu;
+  return scoredValue(reading, key);
+}
+
+/** The raw probe voltage behind a sensor, or null for the digital ones. */
+export function sensorVolts(reading: Reading | null, key: SensorKey): number | null {
+  if (!reading) return null;
+  switch (key) {
+    case "ph":
+      return reading.phV;
+    case "tds":
+      return reading.tdsV;
+    case "turbidity":
+      return reading.turbidityV;
+    case "temperature":
+      return null;
+  }
 }
 
 function lastGoodAt(readings: Reading[], key: SensorKey): number | null {
@@ -101,18 +121,69 @@ export function sensorHealth(
     };
   }
 
-  // Turbidity: the device reported, but the voltage can't have come from a
-  // correctly wired probe. Which way it failed points at a different fault.
-  const volts = latest.turbidityV;
+  // The three analog probes all share one failure shape: the device reported,
+  // but the voltage cannot have come from a correctly wired probe. Which way it
+  // failed points at a different fault, so each one is named separately.
+  const volts = sensorVolts(latest, key);
   if (volts === null) {
     return {
       code: "not-detected",
       ok: false,
       label: "Not detected",
-      detail: "The device sent no turbidity value. Check the ADS1115 on I2C (SDA GPIO8, SCL GPIO9).",
+      detail: `The device sent no ${name.toLowerCase()} value. Check the ADS1115 on I2C (SDA GPIO8, SCL GPIO9).`,
       lastGood,
     };
   }
+
+  if (key === "ph") {
+    if (volts < PH_MIN_VALID_V) {
+      return {
+        code: "not-detected",
+        ok: false,
+        label: "Not detected",
+        detail: `A0 reading ${volts.toFixed(3)} V — near zero, so the pH board's AOUT is likely unplugged and the ADS1115 input is floating.`,
+        lastGood,
+      };
+    }
+    if (volts > PH_MAX_VALID_V) {
+      return {
+        code: "out-of-range",
+        ok: false,
+        label: "Out of range",
+        detail: `A0 reading ${volts.toFixed(3)} V, above the ${PH_MAX_VALID_V} V ceiling. The pH board is probably powered from 5V — its output then exceeds the ADS1115's own 3.3V supply, which saturates the reading and stresses the input. Move the board to 3.3V, or divide its output.`,
+        lastGood,
+      };
+    }
+    // Voltage is fine but the calibration maps it outside 0–14.
+    return {
+      code: "off-scale",
+      ok: false,
+      label: "Off scale",
+      detail: `A0 steady at ${volts.toFixed(3)} V, which the current two-point calibration maps outside pH 0–14. The signal is live — recalibrate against pH 7.00 buffer and set PH_NEUTRAL_V.`,
+      lastGood,
+    };
+  }
+
+  if (key === "tds") {
+    if (volts < TDS_MIN_VALID_V) {
+      return {
+        code: "not-detected",
+        ok: false,
+        label: "Dry or unplugged",
+        detail: `A1 reading ${volts.toFixed(3)} V. A TDS probe reads near zero both when it is out of the water and when AOUT is unplugged, so check the probe is submerged before you check the wiring.`,
+        lastGood,
+      };
+    }
+    return {
+      code: "out-of-range",
+      ok: false,
+      label: "Out of range",
+      detail: `A1 reading ${volts.toFixed(3)} V, above the ${TDS_MAX_VALID_V} V this probe can produce. Check that AOUT goes to A1 directly, with no divider, and that the probe is on 3.3–5V.`,
+      lastGood,
+    };
+  }
+
+  // Turbidity.
   if (volts < TURBIDITY_MIN_VALID_V) {
     return {
       code: "not-detected",

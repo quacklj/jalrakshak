@@ -1,28 +1,43 @@
 /*
   Jalraksha One — ESP32-S3 field node
-  DS18B20 (temperature) + turbidity probe via ADS1115, streamed to the dashboard
+  Four probes streamed to the dashboard, two pump relays driven from it
   ---------------------------------------------------------------------------
-  Wiring (unchanged from the bench test):
-    DS18B20 VCC   -> 3.3V
-    DS18B20 GND   -> common GND
-    DS18B20 DATA  -> GPIO 4  (+ 4.7k pull-up between DATA and 3.3V)
+  WIRING
+    ADS1115  VDD -> 3.3V   GND -> common   SDA -> GPIO 8   SCL -> GPIO 9
+             ADDR -> GND   (I2C address 0x48)
 
-    ADS1115 VDD   -> 3.3V
-    ADS1115 GND   -> common GND
-    ADS1115 SCL   -> GPIO 9
-    ADS1115 SDA   -> GPIO 8
-    ADS1115 ADDR  -> GND        (I2C address 0x48)
+      pH        AOUT ------------------------------------> ADS1115 A0  (direct)
+      TDS       AOUT ------------------------------------> ADS1115 A1  (direct)
+      Turbidity AOUT -> [10k] -> node -> [15k] -> GND
+                                node -----------------> ADS1115 A2
 
-    Turbidity VCC  -> 5V
-    Turbidity GND  -> common GND
-    Turbidity AOUT -> [10k] -> node -> [15k] -> GND
-                                node -> ADS1115 A2
+    DS18B20   VCC -> 3.3V   GND -> common
+              DATA -> GPIO 4   (+ 4.7k pull-up between DATA and 3.3V)
 
-  Libraries (Arduino Library Manager):
+    Relay board  IN1 -> GPIO 14      Pump 1
+                 IN2 -> GPIO 18      Pump 2
+                 VCC -> 5V, GND -> common with the ESP32
+
+  ---------------------------------------------------------------------------
+  TWO THINGS TO CHECK BEFORE POWERING UP
+
+  1. The pH board's supply. The ADS1115 runs on 3.3V, and its inputs must not
+     go above that rail. A pH board powered from 5V can output up to 5V, which
+     saturates the reading and stresses the ADC. Run the pH board from 3.3V, or
+     put a divider on its AOUT the way the turbidity probe has one.
+
+  2. RELAY_ACTIVE_LOW below. Most cheap relay boards energise when the input is
+     pulled LOW; some are the opposite. Get this wrong and the pumps run when
+     the dashboard says they are off. Test with the pump disconnected first —
+     you should hear the relay click when you press Start, not before.
+
+  ---------------------------------------------------------------------------
+  LIBRARIES (Arduino Library Manager)
     - "OneWire"            by Jim Studt / Paul Stoffregen
     - "DallasTemperature"  by Miles Burton
-    - "Adafruit ADS1X15"
-  WiFi.h / HTTPClient.h ship with the ESP32 board package.
+    - "Adafruit ADS1X15"   by Adafruit
+  WiFi.h / HTTPClient.h ship with the ESP32 board package. No JSON library is
+  needed: the relay poll returns plain text, one character per relay.
 
   If Serial Monitor shows nothing: Tools -> USB CDC On Boot -> Enabled, re-upload.
 
@@ -41,33 +56,77 @@
 #include <esp_system.h>
 
 /* ======================= EDIT THIS BLOCK ======================= */
-const char* WIFI_SSID     = "your-wifi-name";
-const char* WIFI_PASSWORD = "your-wifi-password";
+/*
+  Put your real credentials in `secrets.h` (copy secrets.example.h) rather than
+  here. That file is git-ignored, so your Wi-Fi password never reaches GitHub.
+  These placeholders are only the fallback that keeps a fresh clone compiling.
+*/
+#if __has_include("secrets.h")
+#include "secrets.h"
+#endif
 
+#ifndef JR_WIFI_SSID
+#define JR_WIFI_SSID "your-wifi-name"
+#endif
+#ifndef JR_WIFI_PASSWORD
+#define JR_WIFI_PASSWORD "your-wifi-password"
+#endif
+#ifndef JR_SERVER_HOST
 // Must be reachable FROM THE ESP32, so never "localhost".
 // Find your laptop's address with:  ipconfig getifaddr en0
-const char* SERVER_URL = "http://192.168.1.10:3000/api/ingest";
+#define JR_SERVER_HOST "http://192.168.1.10:3000"
+#endif
+#ifndef JR_DEVICE_TOKEN
+#define JR_DEVICE_TOKEN ""
+#endif
+
+const char* WIFI_SSID = JR_WIFI_SSID;
+const char* WIFI_PASSWORD = JR_WIFI_PASSWORD;
+
+// Everything hangs off one host so there is a single address to change.
+const char* SERVER_HOST = JR_SERVER_HOST;
+const char* INGEST_PATH = "/api/ingest";
+const char* RELAY_PATH = "/api/relays?fmt=text";
 
 const char* DEVICE_ID = "ESP32-JR01";
+const char* DEVICE_TOKEN = JR_DEVICE_TOKEN;
 
-// Leave empty unless you set DEVICE_TOKEN in the dashboard's environment.
-const char* DEVICE_TOKEN = "";
+// Set false if your relay board energises on a HIGH input. See the note above.
+const bool RELAY_ACTIVE_LOW = true;
 
 const unsigned long POST_INTERVAL_MS = 10000;  // how often a reading is uploaded
 /* =============================================================== */
 
 const unsigned long SAMPLE_INTERVAL_MS = 2000;   // how often the sensors are read
 const unsigned long RESCAN_INTERVAL_MS = 30000;  // how often a missing probe is retried
+const unsigned long RELAY_POLL_MS = 1000;        // how often the pump command is fetched
+
+/* ---- Pump safety ----------------------------------------------------------
+   No float switch is wired, so nothing physical stops a running pump: it can
+   overflow a tank or run itself dry. These two limits are the whole safety
+   story, and they are enforced here as well as on the server so that a dead
+   dashboard, a crashed browser or a dropped network cannot leave a motor on.
+   --------------------------------------------------------------------------- */
+const unsigned long PUMP_MAX_RUN_MS = 5UL * 60UL * 1000UL;  // hard stop per run
+const unsigned long PUMP_COMMS_FAILSAFE_MS = 30000UL;       // silence -> all off
 
 // ---- DS18B20 ----
 #define ONE_WIRE_PIN 4
 OneWire oneWire(ONE_WIRE_PIN);
 DallasTemperature tempSensor(&oneWire);
 
-// ---- ADS1115 / turbidity ----
+// ---- ADS1115 channels ----
 Adafruit_ADS1115 ads;
-const int TURBIDITY_CHANNEL = 2;                   // A2
+const int PH_CHANNEL = 0;
+const int TDS_CHANNEL = 1;
+const int TURBIDITY_CHANNEL = 2;
 const float DIVIDER_RATIO = 15.0 / (10.0 + 15.0);  // 10k/15k divider = 0.6
+
+// ---- Relays ----
+const int RELAY_COUNT = 2;
+const int RELAY_PINS[RELAY_COUNT] = { 14, 18 };
+bool relayOn[RELAY_COUNT] = { false, false };
+unsigned long relaySince[RELAY_COUNT] = { 0, 0 };
 
 // ---- what is actually present right now ----
 bool adsPresent = false;
@@ -75,16 +134,22 @@ bool dsPresent = false;
 
 // ---- accumulators, averaged between uploads ----
 float tempSum = 0.0f;
-int   tempCount = 0;
-float voltSum = 0.0f;
-int   voltCount = 0;
-int32_t rawSum = 0;
-float voltMin = 99.0f;
-float voltMax = -99.0f;
+int tempCount = 0;
+float phSum = 0.0f;
+int phCount = 0;
+float tdsSum = 0.0f;
+int tdsCount = 0;
+float turbSum = 0.0f;
+int turbCount = 0;
+int32_t turbRawSum = 0;
+float turbMin = 99.0f;
+float turbMax = -99.0f;
 
 unsigned long lastSample = 0;
 unsigned long lastPost = 0;
 unsigned long lastRescan = 0;
+unsigned long lastRelayPoll = 0;
+unsigned long lastServerContact = 0;
 
 // Explicit prototypes — the IDE usually generates these, but not reliably for
 // functions used above their definition.
@@ -92,6 +157,11 @@ void diagnoseOneWire();
 void scanSensors(bool verbose);
 void reportPost(HTTPClient& http, int code, const char* body);
 void diagnoseAds();
+void applyRelay(int index, bool on, const char* why);
+void allRelaysOff(const char* why);
+void pollRelays();
+void enforcePumpLimits();
+bool buildUrl(char* out, size_t len, const char* path);
 
 // Why the chip last restarted. Uploaded with every reading, because on the S3
 // the USB serial port dies with each reset — so the dashboard is often the only
@@ -100,16 +170,16 @@ const char* RESET_REASON = "unknown";
 
 const char* resetReasonName() {
   switch (esp_reset_reason()) {
-    case ESP_RST_POWERON:   return "power-on";
-    case ESP_RST_EXT:       return "external-reset";
-    case ESP_RST_SW:        return "software";
-    case ESP_RST_PANIC:     return "crash-panic";
-    case ESP_RST_INT_WDT:   return "interrupt-watchdog";
-    case ESP_RST_TASK_WDT:  return "task-watchdog";
-    case ESP_RST_WDT:       return "watchdog";
+    case ESP_RST_POWERON: return "power-on";
+    case ESP_RST_EXT: return "external-reset";
+    case ESP_RST_SW: return "software";
+    case ESP_RST_PANIC: return "crash-panic";
+    case ESP_RST_INT_WDT: return "interrupt-watchdog";
+    case ESP_RST_TASK_WDT: return "task-watchdog";
+    case ESP_RST_WDT: return "watchdog";
     case ESP_RST_DEEPSLEEP: return "deep-sleep";
-    case ESP_RST_BROWNOUT:  return "brownout";
-    default:                return "unknown";
+    case ESP_RST_BROWNOUT: return "brownout";
+    default: return "unknown";
   }
 }
 
@@ -152,14 +222,127 @@ void connectWiFi() {
   }
 }
 
+/* Joins SERVER_HOST and a path. Returns false rather than emitting a truncated
+   URL, because a half-formed address fails in a way that looks like a network
+   fault and wastes an hour. */
+bool buildUrl(char* out, size_t len, const char* path) {
+  int n = snprintf(out, len, "%s%s", SERVER_HOST, path);
+  return n > 0 && (size_t)n < len;
+}
+
+/* ======================= RELAYS ======================= */
+
+/* Drives one relay and remembers when it changed.
+
+   The pin is written BEFORE it is made an output, so the ESP32's boot-time
+   floating pin cannot pulse a pump for the microseconds between pinMode() and
+   the first digitalWrite(). On an active-low board that pulse is a real motor
+   kick every time the chip resets. */
+void applyRelay(int index, bool on, const char* why) {
+  if (index < 0 || index >= RELAY_COUNT) return;
+  int level = (on == RELAY_ACTIVE_LOW) ? LOW : HIGH;
+  digitalWrite(RELAY_PINS[index], level);
+  pinMode(RELAY_PINS[index], OUTPUT);
+  digitalWrite(RELAY_PINS[index], level);
+
+  if (relayOn[index] != on) {
+    relayOn[index] = on;
+    relaySince[index] = millis();
+    Serial.print("Pump ");
+    Serial.print(index + 1);
+    Serial.print(" (GPIO ");
+    Serial.print(RELAY_PINS[index]);
+    Serial.print(") -> ");
+    Serial.print(on ? "ON" : "OFF");
+    Serial.print("   [");
+    Serial.print(why);
+    Serial.println("]");
+  }
+}
+
+void allRelaysOff(const char* why) {
+  for (int i = 0; i < RELAY_COUNT; i++) applyRelay(i, false, why);
+}
+
+/* Asks the dashboard what the pumps should be doing.
+
+   The response is one character per relay, '1' or '0' — no JSON parser needed,
+   and small enough to poll every second without loading the node. Anything
+   that is not exactly RELAY_COUNT characters is treated as a failed poll and
+   ignored, so a captive-portal login page or an error body can never be
+   misread as a command to start a motor. */
+void pollRelays() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  char url[160];
+  if (!buildUrl(url, sizeof(url), RELAY_PATH)) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  if (!http.begin(client, url)) return;
+  http.setTimeout(3000);
+  if (strlen(DEVICE_TOKEN) > 0) http.addHeader("x-device-token", DEVICE_TOKEN);
+
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    body.trim();
+    if (body.length() == RELAY_COUNT) {
+      lastServerContact = millis();
+      for (int i = 0; i < RELAY_COUNT; i++) {
+        applyRelay(i, body[i] == '1', "dashboard");
+      }
+    } else {
+      Serial.print("Relay poll: unexpected body \"");
+      Serial.print(body);
+      Serial.println("\" - ignored");
+    }
+  } else if (code == 401) {
+    Serial.println("Relay poll: 401 - DEVICE_TOKEN does not match the server's.");
+  }
+  http.end();
+}
+
+/* The two limits that stand in for a float switch.
+
+   Both are checked here rather than trusted to the server, because the whole
+   point is to survive the server going away. millis() overflow is handled by
+   unsigned subtraction, which wraps correctly. */
+void enforcePumpLimits() {
+  unsigned long nowMs = millis();
+
+  for (int i = 0; i < RELAY_COUNT; i++) {
+    if (relayOn[i] && nowMs - relaySince[i] >= PUMP_MAX_RUN_MS) {
+      applyRelay(i, false, "max run time reached");
+      Serial.println("      A pump hit its run limit. Nothing physical stops it otherwise -");
+      Serial.println("      wire a float switch in series before running this unattended.");
+    }
+  }
+
+  bool anyOn = false;
+  for (int i = 0; i < RELAY_COUNT; i++) anyOn = anyOn || relayOn[i];
+  if (!anyOn) return;
+
+  // lastServerContact is 0 until the first successful poll, so a node that has
+  // never reached the dashboard cannot hold a pump on either.
+  if (nowMs - lastServerContact >= PUMP_COMMS_FAILSAFE_MS) {
+    allRelaysOff("lost contact with the dashboard");
+    Serial.println("      Losing the dashboard while a pump runs is exactly when you least");
+    Serial.println("      want it latched on, so both relays are now off.");
+  }
+}
+
+/* ======================= SENSORS ======================= */
+
 /* Reads all four ADS1115 inputs and reports how quiet each one is.
    The chip multiplexes one sampling capacitor across every channel, so an
-   unconnected input left floating can bleed charge into the channel you care
-   about. A2 is where the probe lives; A0/A1/A3 should read near zero and be
-   steady. If they wander, tie them to GND. */
+   unconnected input left floating can bleed charge into the channels you care
+   about. A0/A1/A2 carry probes; A3 is spare and should read near zero and be
+   steady. If it wanders, tie it to GND. */
 void diagnoseAds() {
   if (!adsPresent) return;
   Serial.println("ADS1115 channel survey (8 samples each):");
+  const char* names[4] = { "(pH)   ", "(TDS)  ", "(turb) ", "(spare)" };
   for (int ch = 0; ch < 4; ch++) {
     float lo = 99, hi = -99, sum = 0;
     for (int i = 0; i < 8; i++) {
@@ -171,21 +354,20 @@ void diagnoseAds() {
     }
     Serial.print("   A");
     Serial.print(ch);
-    Serial.print(ch == TURBIDITY_CHANNEL ? " (probe) " : "         ");
-    Serial.print("mean ");
+    Serial.print(" ");
+    Serial.print(names[ch]);
+    Serial.print(" mean ");
     Serial.print(sum / 8, 4);
     Serial.print(" V   ripple ");
     Serial.print(hi - lo, 4);
     Serial.print(" V");
-    if (ch != TURBIDITY_CHANNEL && (hi - lo > 0.02 || fabs(sum / 8) > 0.05)) {
-      Serial.print("   <- floating, tie A");
-      Serial.print(ch);
-      Serial.print(" to GND");
+    if (ch == 3 && (hi - lo > 0.02 || fabs(sum / 8) > 0.05)) {
+      Serial.print("   <- floating, tie A3 to GND");
     }
     Serial.println();
   }
-  Serial.println("   Ripple above ~0.01 V on the probe channel: add a 0.1uF cap");
-  Serial.println("   from A2 to GND, and one across the ADS1115's VDD/GND pins.");
+  Serial.println("   Ripple above ~0.01 V on a probe channel: add a 0.1uF cap from");
+  Serial.println("   that input to GND, and one across the ADS1115's VDD/GND pins.");
 }
 
 /* Probes the I2C bus and the 1-Wire bus. Safe to call repeatedly — a probe
@@ -194,7 +376,7 @@ void scanSensors(bool verbose) {
   bool ads_was = adsPresent, ds_was = dsPresent;
 
   adsPresent = ads.begin(0x48);
-  if (adsPresent) ads.setGain(GAIN_ONE);  // +/-4.096V, matches the divided signal
+  if (adsPresent) ads.setGain(GAIN_ONE);  // +/-4.096V, headroom for all three probes
 
   tempSensor.begin();
   dsPresent = tempSensor.getDeviceCount() > 0;
@@ -219,7 +401,7 @@ void scanSensors(bool verbose) {
    The line idles high through the pull-up; a device answers a reset with a
    presence pulse, so the pin level plus that answer localises the fault. */
 void diagnoseOneWire() {
-  bool presence = oneWire.reset();          // 1 = something answered
+  bool presence = oneWire.reset();  // 1 = something answered
   pinMode(ONE_WIRE_PIN, INPUT);
   bool idleHigh = digitalRead(ONE_WIRE_PIN);
 
@@ -242,6 +424,17 @@ void diagnoseOneWire() {
 }
 
 void setup() {
+  // Relays first, before anything can take time. Both pumps must be off and
+  // stay off across a reset, whatever caused it.
+  for (int i = 0; i < RELAY_COUNT; i++) {
+    int offLevel = RELAY_ACTIVE_LOW ? HIGH : LOW;
+    digitalWrite(RELAY_PINS[i], offLevel);
+    pinMode(RELAY_PINS[i], OUTPUT);
+    digitalWrite(RELAY_PINS[i], offLevel);
+    relayOn[i] = false;
+    relaySince[i] = millis();
+  }
+
   Serial.begin(115200);
   // Wait for the USB CDC port, but never forever — the node has to boot and run
   // on its own when no laptop is attached.
@@ -256,24 +449,33 @@ void setup() {
   Serial.println(RESET_REASON);
   if (strcmp(RESET_REASON, "brownout") == 0) {
     Serial.println("   BROWNOUT - the 3.3V rail collapsed, almost always the power supply.");
-    Serial.println("   Try a different USB DATA cable (thin/charge-only cables are the usual");
-    Serial.println("   culprit), a port directly on the computer rather than a hub, and give");
-    Serial.println("   the 5V turbidity module its own supply with GND tied to the ESP32.");
+    Serial.println("   With relays on the board, suspect the pump's inrush current pulling the");
+    Serial.println("   shared 5V down. Give the relay board and pumps their own supply, with");
+    Serial.println("   only GND tied to the ESP32.");
   } else if (strcmp(RESET_REASON, "crash-panic") == 0) {
     Serial.println("   The sketch crashed. The backtrace above this line names the fault.");
   }
 
-  Wire.begin(8, 9);   // SDA = GPIO8, SCL = GPIO9
+  Serial.print("Pumps    : GPIO ");
+  Serial.print(RELAY_PINS[0]);
+  Serial.print(" and GPIO ");
+  Serial.print(RELAY_PINS[1]);
+  Serial.print(", active-");
+  Serial.print(RELAY_ACTIVE_LOW ? "LOW" : "HIGH");
+  Serial.println(", both off");
+
+  Wire.begin(8, 9);  // SDA = GPIO8, SCL = GPIO9
   scanSensors(true);
   diagnoseAds();
 
   connectWiFi();
 
   Serial.print("Uploading to: ");
-  Serial.println(SERVER_URL);
-  if (strstr(SERVER_URL, "192.168.1.10") != NULL) {
-    Serial.println("WARNING: SERVER_URL still looks like the example address.");
-    Serial.println("         Set it to your dashboard machine's real IP.");
+  Serial.print(SERVER_HOST);
+  Serial.println(INGEST_PATH);
+  if (strstr(SERVER_HOST, "192.168.1.10:") != NULL) {
+    Serial.println("WARNING: SERVER_HOST still looks like the example address.");
+    Serial.println("         Set it to your dashboard machine's real IP in secrets.h.");
   }
   Serial.println("======================");
   Serial.println();
@@ -292,68 +494,89 @@ void sampleSensors() {
     tempCount++;
   }
 
-  // --- Turbidity ---
-  int16_t raw = 0;
-  float adsVoltage = 0, turbidityVoltage = 0;
+  // --- Analog probes ---
+  float phVoltage = 0, tdsVoltage = 0, turbVoltage = 0, turbAdsVoltage = 0;
+  int16_t turbRaw = 0;
   if (adsPresent) {
-    raw = ads.readADC_SingleEnded(TURBIDITY_CHANNEL);
-    adsVoltage = ads.computeVolts(raw);              // what the ADS1115 actually sees
-    turbidityVoltage = adsVoltage / DIVIDER_RATIO;   // sensor's real output, divider undone
-    voltSum += turbidityVoltage;
-    rawSum += raw;
-    voltCount++;
-    if (turbidityVoltage < voltMin) voltMin = turbidityVoltage;
-    if (turbidityVoltage > voltMax) voltMax = turbidityVoltage;
+    phVoltage = ads.computeVolts(ads.readADC_SingleEnded(PH_CHANNEL));
+    tdsVoltage = ads.computeVolts(ads.readADC_SingleEnded(TDS_CHANNEL));
+
+    turbRaw = ads.readADC_SingleEnded(TURBIDITY_CHANNEL);
+    turbAdsVoltage = ads.computeVolts(turbRaw);       // what the ADS1115 sees
+    turbVoltage = turbAdsVoltage / DIVIDER_RATIO;     // sensor output, divider undone
+
+    phSum += phVoltage;
+    phCount++;
+    tdsSum += tdsVoltage;
+    tdsCount++;
+    turbSum += turbVoltage;
+    turbRawSum += turbRaw;
+    turbCount++;
+    if (turbVoltage < turbMin) turbMin = turbVoltage;
+    if (turbVoltage > turbMax) turbMax = turbVoltage;
   }
 
   // --- Print combined reading ---
-  Serial.print("Temp: ");
+  Serial.print("Temp ");
   if (!tempOk) {
-    Serial.print("no sensor detected");
+    Serial.print("  n/d  ");
   } else {
     Serial.print(tempC, 2);
     Serial.print(" C");
   }
 
-  Serial.print("   |   Turbidity ");
   if (!adsPresent) {
-    Serial.println("no ADS1115");
-  } else {
-    Serial.print("raw: ");
-    Serial.print(raw);
-    Serial.print("   ADS: ");
-    Serial.print(adsVoltage, 3);
-    Serial.print(" V   Sensor: ");
-    Serial.print(turbidityVoltage, 3);
-    Serial.print(" V");
-    // A healthy probe sits near 4.2 V in clear water. Persistently low means
-    // supply or wiring far more often than it means genuinely opaque water.
-    if (turbidityVoltage < 2.0) {
-      Serial.print("  <- LOW: is the probe on 5V (not 3.3V) and is AOUT on A2?");
-    }
-    Serial.println();
+    Serial.println("   |   no ADS1115 - pH, TDS and turbidity all unavailable");
+    return;
   }
+
+  Serial.print("  |  pH ");
+  Serial.print(phVoltage, 3);
+  Serial.print(" V");
+  // A wired pH board idles near 2.5 V in neutral water. Pinned near zero is a
+  // disconnected AOUT far more often than it is genuinely alkaline water.
+  if (phVoltage < 0.08) Serial.print(" <-A0 floating?");
+  if (phVoltage > 3.4) Serial.print(" <-over 3.3V rail!");
+
+  Serial.print("  |  TDS ");
+  Serial.print(tdsVoltage, 3);
+  Serial.print(" V");
+  if (tdsVoltage < 0.02) Serial.print(" <-probe in air?");
+
+  Serial.print("  |  Turb ");
+  Serial.print(turbVoltage, 3);
+  Serial.print(" V (raw ");
+  Serial.print(turbRaw);
+  Serial.print(")");
+  // A healthy probe sits near 4.2 V in clear water. Persistently low means
+  // supply or wiring far more often than it means genuinely opaque water.
+  if (turbVoltage < 2.0) Serial.print(" <-LOW: on 5V? AOUT on A2?");
+  Serial.println();
 }
 
 void uploadReading() {
   bool haveTemp = tempCount > 0;
-  bool haveTurb = voltCount > 0;
+  bool havePh = phCount > 0;
+  bool haveTds = tdsCount > 0;
+  bool haveTurb = turbCount > 0;
 
-  float avgTemp  = haveTemp ? (tempSum / tempCount) : 0.0f;
-  float avgVolts = haveTurb ? (voltSum / voltCount) : 0.0f;
-  int   avgRaw   = haveTurb ? (int)(rawSum / voltCount) : 0;
+  float avgTemp = haveTemp ? (tempSum / tempCount) : 0.0f;
+  float avgPh = havePh ? (phSum / phCount) : 0.0f;
+  float avgTds = haveTds ? (tdsSum / tdsCount) : 0.0f;
+  float avgTurb = haveTurb ? (turbSum / turbCount) : 0.0f;
+  int avgRaw = haveTurb ? (int)(turbRawSum / turbCount) : 0;
 
   // A working probe swings hard when you lift it out of the water. Reporting
   // the spread over each window makes that test readable without a multimeter.
   if (haveTurb) {
     Serial.print("Turbidity window: min ");
-    Serial.print(voltMin, 3);
+    Serial.print(turbMin, 3);
     Serial.print(" V  max ");
-    Serial.print(voltMax, 3);
+    Serial.print(turbMax, 3);
     Serial.print(" V  swing ");
-    Serial.print(voltMax - voltMin, 3);
+    Serial.print(turbMax - turbMin, 3);
     Serial.println(" V");
-    if (avgVolts < 2.0) {
+    if (avgTurb < 2.0) {
       Serial.println("   Clear water should read ~4.2 V. Reading this low usually means the");
       Serial.println("   module is on 3.3V instead of 5V, so its IR LED is barely lit.");
       Serial.println("   Test: lift the probe into open air. A working sensor jumps toward 4 V.");
@@ -362,9 +585,17 @@ void uploadReading() {
   }
 
   // Reset accumulators regardless of upload success — never send stale averages.
-  tempSum = 0; tempCount = 0;
-  voltSum = 0; voltCount = 0; rawSum = 0;
-  voltMin = 99.0f; voltMax = -99.0f;
+  tempSum = 0;
+  tempCount = 0;
+  phSum = 0;
+  phCount = 0;
+  tdsSum = 0;
+  tdsCount = 0;
+  turbSum = 0;
+  turbCount = 0;
+  turbRawSum = 0;
+  turbMin = 99.0f;
+  turbMax = -99.0f;
 
   connectWiFi();
   if (WiFi.status() != WL_CONNECTED) {
@@ -373,35 +604,45 @@ void uploadReading() {
   }
 
   // A probe that is not answering is sent as null, so the dashboard can name
-  // which sensor is down instead of guessing from silence.
-  char tempField[24];
-  char turbField[24];
+  // which sensor is down instead of guessing from silence. Never send 0 for a
+  // dead probe: 0 is a value, and 0 ppm or 0 NTU reads as very clean water.
+  char tempField[24], phField[24], tdsField[24], turbField[24];
   if (haveTemp) snprintf(tempField, sizeof(tempField), "%.2f", avgTemp);
-  else          strcpy(tempField, "null");
-  if (haveTurb) snprintf(turbField, sizeof(turbField), "%.3f", avgVolts);
-  else          strcpy(turbField, "null");
+  else strcpy(tempField, "null");
+  if (havePh) snprintf(phField, sizeof(phField), "%.4f", avgPh);
+  else strcpy(phField, "null");
+  if (haveTds) snprintf(tdsField, sizeof(tdsField), "%.4f", avgTds);
+  else strcpy(tdsField, "null");
+  if (haveTurb) snprintf(turbField, sizeof(turbField), "%.3f", avgTurb);
+  else strcpy(turbField, "null");
 
-  char body[320];
+  char body[420];
   snprintf(body, sizeof(body),
-           "{\"device_id\":\"%s\",\"temp_c\":%s,\"turbidity_v\":%s,\"raw\":%d,"
+           "{\"device_id\":\"%s\",\"temp_c\":%s,\"ph_v\":%s,\"tds_v\":%s,"
+           "\"turbidity_v\":%s,\"raw\":%d,\"relay1\":%d,\"relay2\":%d,"
            "\"rssi\":%d,\"uptime_ms\":%lu,\"reset_reason\":\"%s\",\"heap\":%lu}",
-           DEVICE_ID, tempField, turbField, avgRaw, WiFi.RSSI(), millis(),
-           RESET_REASON, (unsigned long)ESP.getFreeHeap());
+           DEVICE_ID, tempField, phField, tdsField, turbField, avgRaw,
+           relayOn[0] ? 1 : 0, relayOn[1] ? 1 : 0,
+           WiFi.RSSI(), millis(), RESET_REASON, (unsigned long)ESP.getFreeHeap());
+
+  char url[160];
+  if (!buildUrl(url, sizeof(url), INGEST_PATH)) {
+    Serial.println("Upload failed: SERVER_HOST is too long to build a URL from");
+    return;
+  }
 
   HTTPClient http;
-  bool secure = (strncmp(SERVER_URL, "https://", 8) == 0);
+  bool secure = (strncmp(url, "https://", 8) == 0);
 
   // Only build the client actually needed. A WiFiClientSecure allocates its TLS
   // context on construction, so making one on every plain-HTTP post churned the
   // heap for nothing.
-  bool started;
   if (secure) {
     WiFiClientSecure tlsClient;
     // No cert bundle on the device — fine for a hackathon deployment, but pin
     // a certificate with tlsClient.setCACert() before anyone calls this production.
     tlsClient.setInsecure();
-    started = http.begin(tlsClient, SERVER_URL);
-    if (started) {
+    if (http.begin(tlsClient, url)) {
       http.setTimeout(8000);
       http.addHeader("Content-Type", "application/json");
       if (strlen(DEVICE_TOKEN) > 0) http.addHeader("x-device-token", DEVICE_TOKEN);
@@ -409,16 +650,14 @@ void uploadReading() {
       reportPost(http, code, body);
       http.end();
     } else {
-      Serial.println("Upload failed: SERVER_URL is not a valid URL");
+      Serial.println("Upload failed: SERVER_HOST is not a valid URL");
     }
     return;
   }
 
   WiFiClient plainClient;
-  started = http.begin(plainClient, SERVER_URL);
-
-  if (!started) {
-    Serial.println("Upload failed: SERVER_URL is not a valid URL");
+  if (!http.begin(plainClient, url)) {
+    Serial.println("Upload failed: SERVER_HOST is not a valid URL");
     return;
   }
 
@@ -441,12 +680,16 @@ void reportPost(HTTPClient& http, int code, const char* body) {
     Serial.print(code);
     Serial.print(" ");
     Serial.println(http.getString());
+    // A 2xx means the dashboard is alive, which is what the pump failsafe
+    // watches. Without this the failsafe would trip during a slow relay poll
+    // even though the node is plainly still talking to the server.
+    if (code >= 200 && code < 300) lastServerContact = millis();
     if (code == 401) Serial.println("      DEVICE_TOKEN does not match the server's.");
     if (code == 404) Serial.println("      URL must end in /api/ingest");
   } else {
     Serial.println(http.errorToString(code));
     Serial.println("      The ESP32 has WiFi but cannot reach the dashboard. Check that:");
-    Serial.println("      - SERVER_URL has your computer's CURRENT IP (it changes)");
+    Serial.println("      - SERVER_HOST has your computer's CURRENT IP (it changes)");
     Serial.println("      - 'npm run dev' is running on that computer");
     Serial.println("      - both are on the same WiFi, and it is not a guest network");
   }
@@ -454,6 +697,15 @@ void reportPost(HTTPClient& http, int code, const char* body) {
 
 void loop() {
   unsigned long nowMs = millis();
+
+  // Checked every pass, before anything that can block. A pump limit that only
+  // runs after a successful network call is not a safety limit.
+  enforcePumpLimits();
+
+  if (nowMs - lastRelayPoll >= RELAY_POLL_MS) {
+    lastRelayPoll = nowMs;
+    pollRelays();
+  }
 
   if (nowMs - lastSample >= SAMPLE_INTERVAL_MS) {
     lastSample = nowMs;
@@ -476,9 +728,11 @@ void loop() {
 
 /*
   What to expect:
-  - Serial prints a live reading every 2 s, and one POST line every 10 s.
+  - Serial prints a live four-sensor line every 2 s, and one POST line every 10 s.
   - The dashboard's Live Monitoring page updates within a second of each POST.
   - "-> 200 {"ok":true,...}" means it landed.
+  - Pressing Start on the dashboard clicks the relay within about a second, and
+    the button only says "Running" once this node has confirmed it in a payload.
   - A missing probe still uploads, as null, and the dashboard names it as
     "not detected" rather than showing the node as offline.
 */

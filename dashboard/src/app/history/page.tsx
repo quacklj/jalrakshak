@@ -5,7 +5,14 @@ import StatusPill from "@/components/StatusPill";
 import { NavIcon } from "@/components/icons";
 import { useLive } from "@/components/useLive";
 import { bandColor } from "@/lib/bandStyle";
-import { SENSORS, bandOfScore, bandOfValue, riskScore } from "@/lib/config";
+import {
+  SENSORS,
+  SENSOR_ORDER,
+  bandOfScore,
+  bandOfValue,
+  riskScore,
+  scoredValue,
+} from "@/lib/config";
 import type { Band } from "@/lib/types";
 
 const WINDOWS = [
@@ -26,25 +33,33 @@ export default function HistoryPage() {
   const rows = useMemo(() => {
     const mapped = readings
       .map((r) => {
-        const score = riskScore(r.tempC, r.turbidityNtu);
+        const score = riskScore(r);
         return { ...r, score, band: bandOfScore(score) };
       })
       .reverse();
     return filter === "all" ? mapped : mapped.filter((r) => r.band === filter);
   }, [readings, filter]);
 
-  const stats = useMemo(() => {
-    const temps = readings.map((r) => r.tempC).filter((v): v is number => v !== null);
-    const ntus = readings.map((r) => r.turbidityNtu).filter((v): v is number => v !== null);
-    const avg = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
-    return {
-      tempAvg: avg(temps),
-      tempMin: temps.length ? Math.min(...temps) : null,
-      tempMax: temps.length ? Math.max(...temps) : null,
-      ntuAvg: avg(ntus),
-      ntuMax: ntus.length ? Math.max(...ntus) : null,
-    };
-  }, [readings]);
+  // One summary per sensor, built from whatever each probe actually produced —
+  // a probe that was down for half the window is averaged over the half it was
+  // up, and says so, rather than being averaged against zeros.
+  const stats = useMemo(
+    () =>
+      SENSOR_ORDER.map((key) => {
+        const vals = readings
+          .map((r) => scoredValue(r, key))
+          .filter((v): v is number => v !== null);
+        return {
+          key,
+          spec: SENSORS[key],
+          n: vals.length,
+          avg: vals.length ? vals.reduce((x, y) => x + y, 0) / vals.length : null,
+          min: vals.length ? Math.min(...vals) : null,
+          max: vals.length ? Math.max(...vals) : null,
+        };
+      }),
+    [readings],
+  );
 
   const fmt = (v: number | null, d: number) => (v === null ? "—" : v.toFixed(d));
 
@@ -68,26 +83,23 @@ export default function HistoryPage() {
             last {win.label} · newest first
           </div>
         </div>
-        <div className="card card-pad">
-          <div className="eyebrow">Temperature avg</div>
-          <div className="figure" style={{ marginTop: 6 }}>
-            {fmt(stats.tempAvg, 2)}
-            <span style={{ fontSize: 14, color: "var(--muted-2)", marginLeft: 4 }}>°C</span>
+        {stats.map((st) => (
+          <div className="card card-pad" key={st.key}>
+            <div className="eyebrow">{st.spec.name} avg</div>
+            <div className="figure" style={{ marginTop: 6 }}>
+              {fmt(st.avg, st.spec.decimals)}
+              <span style={{ fontSize: 14, color: "var(--muted-2)", marginLeft: 4 }}>
+                {st.spec.unit}
+              </span>
+            </div>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>
+              {st.n === 0
+                ? "no readings from this probe"
+                : `min ${fmt(st.min, st.spec.decimals)} · max ${fmt(st.max, st.spec.decimals)}`}
+              {st.n > 0 && st.n < readings.length && ` · ${st.n}/${readings.length} samples`}
+            </div>
           </div>
-          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>
-            min {fmt(stats.tempMin, 2)} · max {fmt(stats.tempMax, 2)}
-          </div>
-        </div>
-        <div className="card card-pad">
-          <div className="eyebrow">Turbidity avg</div>
-          <div className="figure" style={{ marginTop: 6 }}>
-            {fmt(stats.ntuAvg, 1)}
-            <span style={{ fontSize: 14, color: "var(--muted-2)", marginLeft: 4 }}>NTU</span>
-          </div>
-          <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 4 }}>
-            peak {fmt(stats.ntuMax, 1)} NTU
-          </div>
-        </div>
+        ))}
         <div className="card card-pad" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div className="eyebrow">Export</div>
           <a className="btn btn-primary" href={`/api/export?window=${win.ms}`} download>
@@ -142,44 +154,40 @@ export default function HistoryPage() {
 
       <div className="card" style={{ overflow: "hidden" }}>
         <div className="scroll-x">
-          <table style={{ minWidth: 720 }}>
+          <table style={{ minWidth: 860 }}>
             <thead>
               <tr>
                 <th>Time</th>
-                <th className="num">Temp °C</th>
-                <th className="num">Turbidity NTU</th>
-                <th className="num">Probe V</th>
+                {SENSOR_ORDER.map((key) => (
+                  <th className="num" key={key}>
+                    {SENSORS[key].name} {SENSORS[key].unit}
+                  </th>
+                ))}
                 <th className="num">Risk</th>
                 <th>Band</th>
               </tr>
             </thead>
             <tbody>
               {rows.slice(0, limit).map((r) => {
-                const tb = r.tempC != null ? bandOfValue(r.tempC, SENSORS.temperature) : null;
-                const ub =
-                  r.turbidityNtu != null ? bandOfValue(r.turbidityNtu, SENSORS.turbidity) : null;
                 return (
                   <tr key={r.t}>
                     <td className="mono" style={{ color: "var(--muted)", whiteSpace: "nowrap" }}>
                       {new Date(r.t).toLocaleString()}
                     </td>
-                    <td
-                      className="mono num"
-                      style={{ color: tb ? bandColor[tb] : "var(--muted-2)", fontWeight: 500 }}
-                      title={tb ? undefined : "sensor not reading"}
-                    >
-                      {r.tempC === null ? "n/d" : r.tempC.toFixed(2)}
-                    </td>
-                    <td
-                      className="mono num"
-                      style={{ color: ub ? bandColor[ub] : "var(--muted-2)", fontWeight: 500 }}
-                      title={ub ? undefined : "sensor not reading"}
-                    >
-                      {r.turbidityNtu === null ? "n/d" : r.turbidityNtu.toFixed(1)}
-                    </td>
-                    <td className="mono num" style={{ color: "var(--muted)" }}>
-                      {r.turbidityV === null ? "—" : r.turbidityV.toFixed(3)}
-                    </td>
+                    {SENSOR_ORDER.map((key) => {
+                      const v = scoredValue(r, key);
+                      const b = v === null ? null : bandOfValue(v, SENSORS[key]);
+                      return (
+                        <td
+                          className="mono num"
+                          key={key}
+                          style={{ color: b ? bandColor[b] : "var(--muted-2)", fontWeight: 500 }}
+                          title={b ? undefined : "sensor not reading"}
+                        >
+                          {v === null ? "n/d" : v.toFixed(SENSORS[key].decimals)}
+                        </td>
+                      );
+                    })}
                     <td className="mono num" style={{ fontWeight: 600 }}>
                       {r.score}
                     </td>
@@ -191,7 +199,7 @@ export default function HistoryPage() {
               })}
               {!rows.length && (
                 <tr>
-                  <td colSpan={6} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>
+                  <td colSpan={SENSOR_ORDER.length + 3} style={{ padding: 28, textAlign: "center", color: "var(--muted)" }}>
                     {loading ? "Loading…" : "No readings match this filter."}
                   </td>
                 </tr>
