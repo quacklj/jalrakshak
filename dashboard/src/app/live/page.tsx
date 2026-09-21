@@ -44,7 +44,7 @@ export default function LivePage() {
       <div className="h2">Live Monitoring</div>
       <div className="subtle" style={{ marginTop: 8, marginBottom: 20 }}>
         Real-time ESP32 sensor streams ·{" "}
-        {streaming ? "server-sent events" : "polling every 3s"}
+        {streaming ? "server-sent events, pushed on every reading" : "polling every second"}
       </div>
 
       <ConnectionBanner readings={readings} deviceState={state} now={clock} />

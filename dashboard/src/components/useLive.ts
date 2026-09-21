@@ -5,6 +5,9 @@ import type { Reading } from "@/lib/types";
 
 type Loaded = { window: number; rows: Reading[] };
 
+/** Fallback poll interval, used only when server-sent events are unavailable. */
+const POLL_MS = 1000;
+
 /** Ticks once a second. 0 during SSR, so the markup matches on hydration. */
 function useClock(): number {
   return useSyncExternalStore(
@@ -95,7 +98,9 @@ export function useLive(
         } catch {
           /* transient network blip */
         }
-      }, 3000);
+        // Matches the fastest a node posts. SSE already delivers every reading
+        // the moment it lands, so this only runs where SSE could not attach.
+      }, POLL_MS);
     };
 
     try {

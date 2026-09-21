@@ -8,6 +8,7 @@ import {
   voltsToPh,
   voltsToTds,
 } from "@/lib/config";
+import { logReading } from "@/lib/log";
 import { desiredStates } from "@/lib/relays";
 import { addReading } from "@/lib/store";
 import type { IngestPayload, Reading, RelayId } from "@/lib/types";
@@ -117,6 +118,7 @@ export async function POST(req: Request) {
   };
 
   addReading(reading);
+  logReading(reading);
 
   // The relay command rides back on the POST response as well as living on
   // /api/relays. A node whose fast poll is failing still converges here, one
