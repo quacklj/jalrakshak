@@ -9,7 +9,10 @@ driven back the other way from buttons on the dashboard.
 Jalraksha/
 ├── app/                          Android app (Kotlin + Jetpack Compose)
 ├── dashboard/                    Next.js app (the website)
-└── firmware/jalraksha_node/      Arduino sketch for the ESP32-S3
+└── firmware/
+    ├── jalraksha_node/           Arduino sketch for the ESP32-S3 — the real node
+    ├── pump_test/                Relay wiring/polarity check, no Wi-Fi
+    └── bench_test/               WS2812B strip sanity check
 ```
 
 Four sensors and two pumps. Flow, tank level and leakage are not wired up, so the UI does not
