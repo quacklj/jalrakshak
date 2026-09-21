@@ -1,9 +1,10 @@
 # Jalraksha One
 
 Live water-quality dashboard for a single ESP32-S3 field node reading **water temperature**
-(DS18B20) plus **pH**, **TDS** and **turbidity** (analog probes via ADS1115). The node posts each
-reading over the internet, the dashboard charts all four in real time, and two **pump relays** are
-driven back the other way from buttons on the dashboard.
+(DS18B20), **pH**, **TDS** and **turbidity** (analog probes via ADS1115), and **tank level**
+(AJ-SR04M ultrasonic). The node posts each reading over the internet, the dashboard charts all
+five in real time, and two **pump relays** are driven back the other way from buttons on the
+dashboard.
 
 ```
 Jalraksha/
@@ -12,12 +13,32 @@ Jalraksha/
 └── firmware/
     ├── jalraksha_node/           Arduino sketch for the ESP32-S3 — the real node
     ├── pump_test/                Relay wiring/polarity check, no Wi-Fi
+    ├── ultrasonic_test/          AJ-SR04M distance check, no Wi-Fi
     └── bench_test/               WS2812B strip sanity check
 ```
 
-Four sensors and two pumps. Flow, tank level and leakage are not wired up, so the UI does not
-pretend they exist. pH and TDS are **uncalibrated** — the dashboard says so on every screen and
-will show you the raw probe voltage instead of inventing a number.
+Five sensors and two pumps. Flow and leakage are not wired up, so the UI does not pretend they
+exist. pH and TDS are **uncalibrated** — the dashboard says so on every screen and will show you
+the raw probe voltage instead of inventing a number.
+
+Tank level is the odd one out, and deliberately so. It is a **quantity**, not a contaminant, so it
+gets its own card and its own bands but stays **out of the composite risk score** — otherwise an
+empty tank of perfectly clean water would be reported as a water-quality emergency. Its two
+calibration numbers live in `dashboard/src/lib/config.ts`:
+
+| Constant | What to measure |
+|---|---|
+| `TANK_FULL_DISTANCE_CM` | sensor face → water line with the tank full |
+| `TANK_EMPTY_DISTANCE_CM` | sensor face → tank floor |
+
+The node only ever sends raw centimetres, so re-measuring the tank or remounting the sensor never
+means reflashing the ESP32.
+
+> **Mounting the AJ-SR04M.** It has a **~20 cm blind zone** — far larger than the 2 cm of an
+> HC-SR04 — and inside it the sensor returns nothing or nonsense. Mount it so that even a
+> completely full tank sits more than 20 cm below the sensor face, or the level will drop out
+> exactly when the tank is fullest. The dashboard names this failure specifically ("Inside blind
+> zone") rather than just going blank.
 
 ---
 
@@ -57,6 +78,8 @@ npm run simulate -- --fault tds       # TDS probe lifted out of the water
 npm run simulate -- --fault temp      # DS18B20 off the 1-Wire bus
 npm run simulate -- --fault ads       # the whole ADS1115 gone: three probes at once
 npm run simulate -- --fault divider   # 10k/15k divider missing, ADS1115 saturating
+npm run simulate -- --fault level     # ultrasonic returns no echo at all
+npm run simulate -- --fault blind     # water risen into the sensor's blind zone
 npm run simulate -- --fault cycle     # rotates through all of them
 ```
 
@@ -78,6 +101,9 @@ as **not reading**, with the likely cause:
 | `tds_v` below 0.02 V             | Dry or unplugged| A TDS probe reads zero in air *and* when unplugged  |
 | `turbidity_v` below 0.05 V       | Not detected    | AOUT unplugged, the 15k is pulling the divider to ground |
 | `turbidity_v` above 5.0 V        | Out of range    | Divider missing, ADS1115 saturating                 |
+| `distance_cm: null`              | No echo         | TRIG/ECHO wiring, or the board is in UART mode      |
+| `distance_cm` below 20 cm        | Inside blind zone | Tank overfull, or the sensor mounted too low      |
+| `distance_cm` above 600 cm       | Out of range    | Aimed out of the tank, or at too angled a surface   |
 | Nothing at all for 30 s / 3 min  | Degraded → Offline | Wi-Fi, power, or `SERVER_URL`                    |
 
 That state propagates everywhere: a banner at the top of the page, a red border on the affected
@@ -87,7 +113,8 @@ probe for a zero reading.
 
 It also changes the verdict. The composite risk score leaves a dead sensor out rather than scoring
 it as zero, and while any sensor is down the dashboard refuses to show a green "Safe" badge —
-it says **Partial coverage** instead, because one working probe cannot clear the water.
+it says **Partial coverage** instead, because one working probe cannot clear the water. The score
+itself spans the four *quality* sensors only; tank level bands and alerts on its own.
 
 ---
 
@@ -115,12 +142,16 @@ needed — the relay poll returns plain text. Full wiring is in the file header.
 The sketch samples every 2 s (still printing to Serial), uploads the average every 10 s so a
 single noisy sample can't swing the dashboard, and polls the pump command every 1 s.
 
-### Two things to check before powering up
+### Three things to check before powering up
 
 1. **The pH board's supply.** The ADS1115 runs on 3.3 V and its inputs must not exceed that rail.
    A pH board powered from 5 V can output up to 5 V, which saturates the reading and stresses the
    ADC. Run it from 3.3 V, or divide its output the way turbidity's is divided.
-2. **`RELAY_ACTIVE_LOW`** in the sketch. Most cheap relay boards energise on a LOW input; some are
+2. **Where the ultrasonic is mounted.** Its ~20 cm blind zone has to sit above the highest the
+   water ever gets, and its ECHO pin idles at 5 V, so the 1k/2k divider down to GPIO 17 is not
+   optional. Run `firmware/ultrasonic_test` first — it does nothing but ping, so it tells you
+   whether a problem is the sensor or everything around it.
+3. **`RELAY_ACTIVE_LOW`** in the sketch. Most cheap relay boards energise on a LOW input; some are
    the opposite. Get it wrong and the pumps run when the dashboard says they are off. Test with
    the pump disconnected — the relay should click when you press Start, not before.
 
@@ -183,6 +214,7 @@ Ingest payload:
   "ph_v": 2.5108,
   "tds_v": 0.4193,
   "turbidity_v": 4.05,
+  "distance_cm": 62.4,
   "raw": 12980,
   "relay1": 0,
   "relay2": 0,
@@ -196,8 +228,10 @@ dashboard shows a gap rather than a fake value. **Never send 0 for a dead probe*
 measurement, and 0 ppm or 0 NTU reads as unusually clean water.
 
 `ph_v` and `tds_v` are straight off ADS1115 A0 and A1. `turbidity_v` is A2 with the 10k/15k
-divider already undone, exactly as the sketch prints it. `relay1`/`relay2` are what the node
-believes its own GPIOs are doing — the response carries back what the dashboard wants them to be.
+divider already undone, exactly as the sketch prints it. `distance_cm` is the ultrasonic's distance
+**down to the water surface** — it *falls* as the tank fills, and the percentage is worked out on
+the server, not the node. `relay1`/`relay2` are what the node believes its own GPIOs are doing —
+the response carries back what the dashboard wants them to be.
 
 ---
 
@@ -258,6 +292,14 @@ cannot confirm is worse than no command.
 
 Re-pressing Start does not restart the run clock, so a held or repeated command cannot extend a
 pump past its limit. Wire a float switch in series with the pump before running this unattended.
+
+**The tank-level sensor is not one of those limits.** It reports, charts and alerts, but nothing
+reads it back to stop a pump — a full tank will still overflow and an empty one will still run a
+motor dry. Using it as a software float switch is a deliberate next step, not an oversight: it
+would put a sensor that can return no echo at all in the path of a motor, so it needs a fail-safe
+direction ("no reading" must mean stop) and a hysteresis band before it is trustworthy. Until then
+the four limits above are still the whole safety story, and a physical float switch is still the
+only thing that cannot be argued with.
 
 ---
 

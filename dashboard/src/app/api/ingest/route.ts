@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   DEFAULT_DEVICE_ID,
   RELAYS,
+  distanceToLevel,
   isTurbidityPlausible,
   voltsToNtu,
   voltsToPh,
@@ -55,11 +56,21 @@ export async function POST(req: Request) {
   const phV = num(body.ph_v);
   const tdsV = num(body.tds_v);
   const turbidityV = num(body.turbidity_v);
+  const distanceCm = num(body.distance_cm);
 
   // A payload carrying no sensor at all is a malformed request, not a reading.
-  if (phV === null && tdsV === null && turbidityV === null && body.temp_c === undefined) {
+  if (
+    phV === null &&
+    tdsV === null &&
+    turbidityV === null &&
+    distanceCm === null &&
+    body.temp_c === undefined
+  ) {
     return NextResponse.json(
-      { ok: false, error: "send at least one of temp_c, ph_v, tds_v or turbidity_v" },
+      {
+        ok: false,
+        error: "send at least one of temp_c, ph_v, tds_v, turbidity_v or distance_cm",
+      },
       { status: 400 },
     );
   }
@@ -90,6 +101,12 @@ export async function POST(req: Request) {
     tds: tdsV === null ? null : voltsToTds(tdsV, tempC),
     turbidityV: round(turbidityV, 3),
     turbidityNtu: plausibleTurb ? voltsToNtu(turbidityV) : null,
+    // Same split as the probes: keep the measured centimetres whatever they
+    // say, because an implausible distance is the diagnostic for a badly
+    // mounted sensor — but only turn a distance the sensor can actually
+    // resolve into a tank level.
+    distanceCm: round(distanceCm, 1),
+    levelPct: distanceCm === null ? null : distanceToLevel(distanceCm),
     raw: num(body.raw) ?? undefined,
     rssi: num(body.rssi) ?? undefined,
     uptimeMs: num(body.uptime_ms) ?? undefined,
@@ -110,12 +127,14 @@ export async function POST(req: Request) {
     ntu: reading.turbidityNtu,
     ph: reading.ph,
     tds: reading.tds,
+    level: reading.levelPct,
     relays: desiredStates().map((on) => (on ? 1 : 0)),
     sensors: {
       temperature: reading.tempC === null ? "not detected" : "ok",
       ph: reading.ph === null ? "not detected" : "ok",
       tds: reading.tds === null ? "not detected" : "ok",
       turbidity: reading.turbidityNtu === null ? "not detected" : "ok",
+      level: reading.levelPct === null ? "not detected" : "ok",
     },
   });
 }
@@ -124,8 +143,10 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     hint:
-      "POST JSON here: { device_id, temp_c, ph_v, tds_v, turbidity_v, raw, rssi, uptime_ms, " +
-      "relay1, relay2 }. Send a probe's field as null when it is not answering — never as 0.",
+      "POST JSON here: { device_id, temp_c, ph_v, tds_v, turbidity_v, distance_cm, raw, " +
+      "rssi, uptime_ms, relay1, relay2 }. distance_cm is the ultrasonic's distance DOWN TO " +
+      "the water surface; the tank level is derived from it here. Send a probe's field as " +
+      "null when it is not answering — never as 0.",
     tokenRequired: Boolean(process.env.DEVICE_TOKEN),
   });
 }

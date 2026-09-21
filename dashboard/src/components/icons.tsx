@@ -83,6 +83,15 @@ export function NavIcon({ id, size = 16 }: { id: string; size?: number }) {
           <path d="M6.9 9.9c.1 1.1.9 2 2 2.2" />
         </svg>
       );
+    case "tank":
+      // A vessel part-filled, with the sensor's cone above the surface.
+      return (
+        <svg {...p}>
+          <path d="M3.6 6.4v8.2a1.4 1.4 0 0 0 1.4 1.4h8a1.4 1.4 0 0 0 1.4-1.4V6.4" />
+          <path d="M3.6 10.6c1.2-.9 2.4-.9 3.6 0s2.4.9 3.6 0 2.4-.9 3.6 0" />
+          <path d="M9 1.8v2.6M6.6 4.4 9 1.8l2.4 2.6" />
+        </svg>
+      );
     case "download":
       return (
         <svg {...p}>

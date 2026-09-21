@@ -5,10 +5,11 @@
  *   node scripts/simulate-device.mjs --url http://localhost:3000 --interval 2000
  *   node scripts/simulate-device.mjs --backfill 240   # seed 240 past readings first
  *
- * Walks all four probes around plausible values and occasionally pushes one
+ * Walks all five sensors around plausible values and occasionally pushes one
  * into the warning band so the status colours are exercised. It also polls
  * /api/relays exactly the way the firmware does, so the pump buttons can be
- * driven end to end with nothing plugged in.
+ * driven end to end with nothing plugged in — and pump 1 fills the simulated
+ * tank while pump 2 drains it, so the level chart visibly answers the buttons.
  *
  * --fault lets you rehearse a broken sensor without unplugging anything:
  *   --fault temp      DS18B20 unplugged (temp_c null)
@@ -17,6 +18,8 @@
  *   --fault turb      turbidity AOUT unplugged (voltage collapses to ~0)
  *   --fault divider   10k/15k divider missing (ADS1115 saturates high)
  *   --fault ads       the whole ADS1115 is gone: pH, TDS and turbidity all null
+ *   --fault level     ultrasonic returns no echo at all (distance_cm null)
+ *   --fault blind     water risen into the sensor's ~20cm blind zone
  *   --fault all       nothing answering
  *   --fault cycle     rotates through them, changing every 15 samples
  */
@@ -38,7 +41,7 @@ const TOKEN = args.token || process.env.DEVICE_TOKEN || "";
 const DEVICE_ID = args.device || "ESP32-SIM01";
 const FAULT = args.fault === true ? "cycle" : args.fault || "none";
 
-const CYCLE = ["none", "temp", "ph", "tds", "turb", "ads", "all"];
+const CYCLE = ["none", "temp", "ph", "tds", "turb", "level", "blind", "ads", "all"];
 function faultNow(tick) {
   return FAULT === "cycle" ? CYCLE[Math.floor(tick / 15) % CYCLE.length] : FAULT;
 }
@@ -49,6 +52,9 @@ let temp = 24.5;
 let phV = 2.498;
 let tdsV = 0.42;
 let turbV = 4.198;
+// Distance from the sensor down to the water, cm. Starts mid-tank against the
+// 30cm-full / 120cm-empty geometry in lib/config.ts.
+let distCm = 62.0;
 let tick = 0;
 
 // What the node believes its own relays are doing. The dashboard's buttons
@@ -69,6 +75,15 @@ function step() {
   const target = pumping ? 4.05 : event ? 4.15 : 4.198;
   turbV += (target - turbV) * 0.25 + (Math.random() - 0.5) * 0.004;
 
+  // The two relays are unlabelled on the real board; the simulator picks a
+  // direction for each so the level chart responds to the dashboard buttons.
+  // Pump 1 fills (water rises, distance falls), pump 2 drains.
+  if (relays[0]) distCm -= 1.8;
+  if (relays[1]) distCm += 1.8;
+  if (!relays[0] && !relays[1]) distCm += 0.05; // slow draw-off by the village
+  // Ultrasonic readings are noisy even in still water — a few mm of jitter.
+  distCm = clamp(distCm + (Math.random() - 0.5) * 0.4, 24, 130);
+
   const fault = faultNow(tick);
   const dead = (k) => fault === k || fault === "all" || (fault === "ads" && k !== "temp");
   const floating = () => 0.004 + Math.random() * 0.01;
@@ -88,6 +103,12 @@ function step() {
           : fault === "divider"
             ? 6.82 // ADS1115 railed at 4.096 V ÷ 0.6 divider ratio
             : round(turbV, 3),
+    distance_cm:
+      dead("level") || fault === "all"
+        ? null
+        : fault === "blind"
+          ? round(8 + Math.random() * 3, 1) // risen into the blind zone
+          : round(distCm, 1),
     relay1: relays[0] ? 1 : 0,
     relay2: relays[1] ? 1 : 0,
     rssi: -50 - Math.round(Math.random() * 20),
@@ -96,6 +117,7 @@ function step() {
 }
 
 const round = (v, d) => Math.round(v * 10 ** d) / 10 ** d;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const auth = TOKEN ? { "x-device-token": TOKEN } : {};
 
 async function post(body) {
@@ -146,6 +168,7 @@ while (true) {
         f(out.sensors.ph, `pH ${out.ph}`),
         f(out.sensors.tds, `${out.tds} ppm`),
         f(out.sensors.turbidity, `${out.ntu} NTU`),
+        f(out.sensors.level, `tank ${out.level}% (${body.distance_cm}cm)`),
         `pumps ${relays.map((r) => (r ? "1" : "0")).join("")}`,
       ].join(" · "),
     );

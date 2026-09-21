@@ -14,6 +14,13 @@
     DS18B20   VCC -> 3.3V   GND -> common
               DATA -> GPIO 4   (+ 4.7k pull-up between DATA and 3.3V)
 
+    AJ-SR04M  VCC -> 5V    GND -> common
+              TRIG -> GPIO 16   (direct, 3.3V logic is enough to trigger it)
+              ECHO -> [1k] -> node -> [2k] -> GND
+                              node -> GPIO 17
+              The divider is not optional: ECHO idles at 5V and the ESP32-S3's
+              pins are 3.3V. 1k/2k brings 5V down to 3.3V.
+
     Relay board  IN1 -> GPIO 14      Pump 1
                  IN2 -> GPIO 18      Pump 2
                  VCC -> 5V, GND -> common with the ESP32
@@ -26,7 +33,15 @@
      saturates the reading and stresses the ADC. Run the pH board from 3.3V, or
      put a divider on its AOUT the way the turbidity probe has one.
 
-  2. RELAY_ACTIVE_LOW below. Most cheap relay boards energise when the input is
+  2. Where the AJ-SR04M is mounted. It has a ~20 cm blind zone — much larger
+     than the 2 cm of an HC-SR04 — and inside it the sensor returns nothing or
+     nonsense. Mount it so that even a completely full tank sits more than
+     20 cm below the sensor face, or the level will drop out exactly when the
+     tank is fullest. Then measure the two distances the dashboard needs:
+     sensor face to the full water line, and sensor face to the tank floor.
+     They go in dashboard/src/lib/config.ts, not here.
+
+  3. RELAY_ACTIVE_LOW below. Most cheap relay boards energise when the input is
      pulled LOW; some are the opposite. Get this wrong and the pumps run when
      the dashboard says they are off. Test with the pump disconnected first —
      you should hear the relay click when you press Start, not before.
@@ -36,6 +51,7 @@
     - "OneWire"            by Jim Studt / Paul Stoffregen
     - "DallasTemperature"  by Miles Burton
     - "Adafruit ADS1X15"   by Adafruit
+  The ultrasonic needs no library at all — it is plain pulseIn() timing.
   WiFi.h / HTTPClient.h ship with the ESP32 board package. No JSON library is
   needed: the relay poll returns plain text, one character per relay.
 
@@ -122,6 +138,21 @@ const int TDS_CHANNEL = 1;
 const int TURBIDITY_CHANNEL = 2;
 const float DIVIDER_RATIO = 15.0 / (10.0 + 15.0);  // 10k/15k divider = 0.6
 
+// ---- AJ-SR04M ultrasonic (tank level) ----
+const int TRIG_PIN = 16;
+const int ECHO_PIN = 17;
+
+/* 25 ms of flight is about 4.3 m each way — far past any tank, and short
+   enough that a burst of misses cannot stall the loop for long. */
+const unsigned long PING_TIMEOUT_US = 25000UL;
+/* The transducer rings after each burst. Pinging again before it settles reads
+   the tail of the previous ping as a very close object. 60 ms is the figure the
+   AJ-SR04M's datasheet asks for. */
+const int PING_SETTLE_MS = 60;
+const int PINGS_PER_SAMPLE = 5;
+/* Room for every sample between two uploads (10 s / 2 s = 5), with slack. */
+const int DIST_WINDOW = 24;
+
 // ---- Relays ----
 const int RELAY_COUNT = 2;
 const int RELAY_PINS[RELAY_COUNT] = { 14, 18 };
@@ -131,6 +162,7 @@ unsigned long relaySince[RELAY_COUNT] = { 0, 0 };
 // ---- what is actually present right now ----
 bool adsPresent = false;
 bool dsPresent = false;
+bool sonarPresent = false;
 
 // ---- accumulators, averaged between uploads ----
 float tempSum = 0.0f;
@@ -144,6 +176,11 @@ int turbCount = 0;
 int32_t turbRawSum = 0;
 float turbMin = 99.0f;
 float turbMax = -99.0f;
+
+/* Distances are kept as individual samples rather than a running sum, because
+   this one is reduced with a median instead of a mean. See medianOf(). */
+float distSamples[DIST_WINDOW];
+int distCount = 0;
 
 unsigned long lastSample = 0;
 unsigned long lastPost = 0;
@@ -162,6 +199,9 @@ void allRelaysOff(const char* why);
 void pollRelays();
 void enforcePumpLimits();
 bool buildUrl(char* out, size_t len, const char* path);
+float pingOnceCm();
+float readDistanceCm();
+float medianOf(float* v, int n);
 
 // Why the chip last restarted. Uploaded with every reading, because on the S3
 // the USB serial port dies with each reset — so the dashboard is often the only
@@ -332,6 +372,76 @@ void enforcePumpLimits() {
   }
 }
 
+/* ======================= TANK LEVEL ======================= */
+
+/* Median of a small set, sorted in place.
+
+   Deliberately a median and not a mean. An ultrasonic reliably returns the odd
+   wildly wrong distance — an echo off a tank wall, a ladder rung, or the
+   ripple the pump itself makes — and one outlier is enough to drag a mean by
+   several centimetres, which shows up on the dashboard as the tank level
+   jumping a few percent for no reason. A median discards it outright.
+
+   Insertion sort because n is five. */
+float medianOf(float* v, int n) {
+  for (int i = 1; i < n; i++) {
+    float key = v[i];
+    int j = i - 1;
+    while (j >= 0 && v[j] > key) {
+      v[j + 1] = v[j];
+      j--;
+    }
+    v[j + 1] = key;
+  }
+  return (n % 2) ? v[n / 2] : (v[n / 2 - 1] + v[n / 2]) / 2.0f;
+}
+
+/* One ping. Returns a negative number when nothing came back in time.
+
+   -1 rather than 0, because 0 cm is a distance: treating "no echo" as zero
+   would report a tank filled to the sensor face, which is the single most
+   alarming reading this node can produce. */
+float pingOnceCm() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  unsigned long us = pulseIn(ECHO_PIN, HIGH, PING_TIMEOUT_US);
+  if (us == 0) return -1.0f;
+  // Sound travels ~343 m/s, and the pulse makes the trip twice: us / 58 is the
+  // one-way distance in centimetres.
+  return us / 58.0f;
+}
+
+/* A burst of pings reduced to one distance, or -1 if nothing answered.
+
+   pulseIn() blocks, so this is the slowest thing in the loop. Bailing after two
+   consecutive misses keeps a disconnected sensor cheap (~170 ms) instead of
+   standing in the full burst (~425 ms) every two seconds — and everything that
+   makes a pump safe, the run limit and the comms failsafe, is checked in that
+   same loop. */
+float readDistanceCm() {
+  float samples[PINGS_PER_SAMPLE];
+  int got = 0;
+  int misses = 0;
+
+  for (int i = 0; i < PINGS_PER_SAMPLE; i++) {
+    if (i > 0) delay(PING_SETTLE_MS);
+    float cm = pingOnceCm();
+    if (cm < 0) {
+      if (++misses >= 2) break;
+      continue;
+    }
+    misses = 0;
+    samples[got++] = cm;
+  }
+
+  if (got == 0) return -1.0f;
+  return medianOf(samples, got);
+}
+
 /* ======================= SENSORS ======================= */
 
 /* Reads all four ADS1115 inputs and reports how quiet each one is.
@@ -373,7 +483,7 @@ void diagnoseAds() {
 /* Probes the I2C bus and the 1-Wire bus. Safe to call repeatedly — a probe
    plugged in after boot is picked up on the next rescan. */
 void scanSensors(bool verbose) {
-  bool ads_was = adsPresent, ds_was = dsPresent;
+  bool ads_was = adsPresent, ds_was = dsPresent, sonar_was = sonarPresent;
 
   adsPresent = ads.begin(0x48);
   if (adsPresent) ads.setGain(GAIN_ONE);  // +/-4.096V, headroom for all three probes
@@ -393,6 +503,24 @@ void scanSensors(bool verbose) {
     } else {
       Serial.println("NOT FOUND");
       diagnoseOneWire();
+    }
+  }
+
+  // "Present" here means it answered, which for an ultrasonic is the only
+  // test there is: it has no ID to read back and no bus to enumerate.
+  float probe = readDistanceCm();
+  sonarPresent = probe > 0;
+  if (verbose || sonarPresent != sonar_was) {
+    Serial.print("AJ-SR04M : ");
+    if (sonarPresent) {
+      Serial.print("answering, ");
+      Serial.print(probe, 1);
+      Serial.println(" cm to the surface");
+    } else {
+      Serial.println("NO ECHO");
+      Serial.println("           -> check TRIG on GPIO16 and ECHO through the 1k/2k divider");
+      Serial.println("              to GPIO17, that it has 5V, and the jumper on the board:");
+      Serial.println("              in UART mode it never answers Trig/Echo timing at all.");
     }
   }
 }
@@ -464,6 +592,11 @@ void setup() {
   Serial.print(RELAY_ACTIVE_LOW ? "LOW" : "HIGH");
   Serial.println(", both off");
 
+  // Trig must idle low, or the first ping reads whatever the pin was doing.
+  pinMode(TRIG_PIN, OUTPUT);
+  digitalWrite(TRIG_PIN, LOW);
+  pinMode(ECHO_PIN, INPUT);
+
   Wire.begin(8, 9);  // SDA = GPIO8, SCL = GPIO9
   scanSensors(true);
   diagnoseAds();
@@ -494,6 +627,15 @@ void sampleSensors() {
     tempCount++;
   }
 
+  // --- Tank level ---
+  // Read before the ADS1115 block, because that block returns early when the
+  // ADC is missing — and the ultrasonic is on its own pins, so it has no
+  // reason to go quiet just because the I2C probes did.
+  float distCm = readDistanceCm();
+  bool distOk = distCm > 0;
+  sonarPresent = distOk;
+  if (distOk && distCount < DIST_WINDOW) distSamples[distCount++] = distCm;
+
   // --- Analog probes ---
   float phVoltage = 0, tdsVoltage = 0, turbVoltage = 0, turbAdsVoltage = 0;
   int16_t turbRaw = 0;
@@ -523,6 +665,17 @@ void sampleSensors() {
   } else {
     Serial.print(tempC, 2);
     Serial.print(" C");
+  }
+
+  Serial.print("  |  Tank ");
+  if (!distOk) {
+    Serial.print("no echo");
+  } else {
+    Serial.print(distCm, 1);
+    Serial.print(" cm");
+    // The blind zone is the failure people hit first, and it looks like a
+    // working sensor until you notice the number stopped moving.
+    if (distCm < 20.0f) Serial.print(" <-in the ~20cm blind zone!");
   }
 
   if (!adsPresent) {
@@ -559,12 +712,15 @@ void uploadReading() {
   bool havePh = phCount > 0;
   bool haveTds = tdsCount > 0;
   bool haveTurb = turbCount > 0;
+  bool haveDist = distCount > 0;
 
   float avgTemp = haveTemp ? (tempSum / tempCount) : 0.0f;
   float avgPh = havePh ? (phSum / phCount) : 0.0f;
   float avgTds = haveTds ? (tdsSum / tdsCount) : 0.0f;
   float avgTurb = haveTurb ? (turbSum / turbCount) : 0.0f;
   int avgRaw = haveTurb ? (int)(turbRawSum / turbCount) : 0;
+  // Median of the window, not a mean — same reason as within a single burst.
+  float medDist = haveDist ? medianOf(distSamples, distCount) : 0.0f;
 
   // A working probe swings hard when you lift it out of the water. Reporting
   // the spread over each window makes that test readable without a multimeter.
@@ -596,6 +752,7 @@ void uploadReading() {
   turbRawSum = 0;
   turbMin = 99.0f;
   turbMax = -99.0f;
+  distCount = 0;
 
   connectWiFi();
   if (WiFi.status() != WL_CONNECTED) {
@@ -606,7 +763,7 @@ void uploadReading() {
   // A probe that is not answering is sent as null, so the dashboard can name
   // which sensor is down instead of guessing from silence. Never send 0 for a
   // dead probe: 0 is a value, and 0 ppm or 0 NTU reads as very clean water.
-  char tempField[24], phField[24], tdsField[24], turbField[24];
+  char tempField[24], phField[24], tdsField[24], turbField[24], distField[24];
   if (haveTemp) snprintf(tempField, sizeof(tempField), "%.2f", avgTemp);
   else strcpy(tempField, "null");
   if (havePh) snprintf(phField, sizeof(phField), "%.4f", avgPh);
@@ -615,13 +772,19 @@ void uploadReading() {
   else strcpy(tdsField, "null");
   if (haveTurb) snprintf(turbField, sizeof(turbField), "%.3f", avgTurb);
   else strcpy(turbField, "null");
+  // Raw centimetres to the water surface. The tank's own geometry — how far
+  // down "full" and "empty" are — lives in the dashboard's config, so the tank
+  // can be re-measured or the sensor remounted without reflashing this node.
+  if (haveDist) snprintf(distField, sizeof(distField), "%.1f", medDist);
+  else strcpy(distField, "null");
 
-  char body[420];
+  char body[512];
   snprintf(body, sizeof(body),
            "{\"device_id\":\"%s\",\"temp_c\":%s,\"ph_v\":%s,\"tds_v\":%s,"
-           "\"turbidity_v\":%s,\"raw\":%d,\"relay1\":%d,\"relay2\":%d,"
+           "\"turbidity_v\":%s,\"distance_cm\":%s,\"raw\":%d,"
+           "\"relay1\":%d,\"relay2\":%d,"
            "\"rssi\":%d,\"uptime_ms\":%lu,\"reset_reason\":\"%s\",\"heap\":%lu}",
-           DEVICE_ID, tempField, phField, tdsField, turbField, avgRaw,
+           DEVICE_ID, tempField, phField, tdsField, turbField, distField, avgRaw,
            relayOn[0] ? 1 : 0, relayOn[1] ? 1 : 0,
            WiFi.RSSI(), millis(), RESET_REASON, (unsigned long)ESP.getFreeHeap());
 
@@ -715,7 +878,7 @@ void loop() {
   // Pick up a probe that was plugged in (or fell out) after boot.
   if (nowMs - lastRescan >= RESCAN_INTERVAL_MS) {
     lastRescan = nowMs;
-    if (!adsPresent || !dsPresent) scanSensors(false);
+    if (!adsPresent || !dsPresent || !sonarPresent) scanSensors(false);
   }
 
   if (nowMs - lastPost >= POST_INTERVAL_MS) {
@@ -728,11 +891,14 @@ void loop() {
 
 /*
   What to expect:
-  - Serial prints a live four-sensor line every 2 s, and one POST line every 10 s.
+  - Serial prints a live five-sensor line every 2 s, and one POST line every 10 s.
   - The dashboard's Live Monitoring page updates within a second of each POST.
   - "-> 200 {"ok":true,...}" means it landed.
   - Pressing Start on the dashboard clicks the relay within about a second, and
     the button only says "Running" once this node has confirmed it in a payload.
   - A missing probe still uploads, as null, and the dashboard names it as
     "not detected" rather than showing the node as offline.
+  - Tank distance falls as the tank fills. If it reads "no echo" with the sensor
+    wired, run firmware/ultrasonic_test first: it does nothing but ping, so it
+    tells you whether the problem is the sensor or everything around it.
 */

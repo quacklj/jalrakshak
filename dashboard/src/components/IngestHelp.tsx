@@ -24,14 +24,17 @@ export default function IngestHelp({ compact = false }: { compact?: boolean }) {
       <pre className="block">
 {`curl -X POST ${url} \\
   -H 'content-type: application/json' \\
-  -d '{"device_id":"ESP32-JR01","temp_c":26.94,"ph_v":2.51,"tds_v":0.42,"turbidity_v":4.05}'`}
+  -d '{"device_id":"ESP32-JR01","temp_c":26.94,"ph_v":2.51,"tds_v":0.42,"turbidity_v":4.05,"distance_cm":62.4}'`}
       </pre>
       {!compact && (
         <div style={{ fontSize: 11.5, color: "var(--muted-2)", marginTop: 10, lineHeight: 1.6 }}>
           Fields: <code className="inline">temp_c</code> °C from the DS18B20,{" "}
           <code className="inline">ph_v</code> and <code className="inline">tds_v</code> straight
           off ADS1115 A0 and A1, <code className="inline">turbidity_v</code> from A2 with the
-          10k/15k divider already undone. Send a probe&apos;s field as{" "}
+          10k/15k divider already undone, and <code className="inline">distance_cm</code> the
+          ultrasonic&apos;s distance <em>down to the water surface</em> — it falls as the tank
+          fills, and the tank level is worked out from it here, not on the node. Send a
+          probe&apos;s field as{" "}
           <code className="inline">null</code> when it is not answering — never as 0, which reads
           as a measurement. Optional: <code className="inline">raw</code>,{" "}
           <code className="inline">rssi</code>, <code className="inline">uptime_ms</code>,{" "}

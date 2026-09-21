@@ -1,6 +1,10 @@
 import {
   DEGRADED_MS,
   ONLINE_MS,
+  TANK_EMPTY_DISTANCE_CM,
+  TANK_FULL_DISTANCE_CM,
+  ULTRASONIC_MAX_CM,
+  ULTRASONIC_MIN_CM,
   PH_MAX_VALID_V,
   PH_MIN_VALID_V,
   SENSORS,
@@ -63,8 +67,16 @@ export function sensorValue(reading: Reading | null, key: SensorKey): number | n
   return scoredValue(reading, key);
 }
 
-/** The raw probe voltage behind a sensor, or null for the digital ones. */
-export function sensorVolts(reading: Reading | null, key: SensorKey): number | null {
+/**
+ * The raw signal behind a sensor's calibrated figure, or null for the ones
+ * that have none.
+ *
+ * "Raw" is volts for the three analog probes and centimetres for the
+ * ultrasonic — different units, but the same role: the number the hardware
+ * actually produced, which stays meaningful when the calibration on top of it
+ * does not. Callers pair this with RAW_SPEC in display.ts for the unit.
+ */
+export function sensorRaw(reading: Reading | null, key: SensorKey): number | null {
   if (!reading) return null;
   switch (key) {
     case "ph":
@@ -73,6 +85,8 @@ export function sensorVolts(reading: Reading | null, key: SensorKey): number | n
       return reading.tdsV;
     case "turbidity":
       return reading.turbidityV;
+    case "level":
+      return reading.distanceCm;
     case "temperature":
       return null;
   }
@@ -121,10 +135,62 @@ export function sensorHealth(
     };
   }
 
+  if (key === "level") {
+    const cm = latest.distanceCm;
+    if (cm === null) {
+      return {
+        code: "not-detected",
+        ok: false,
+        label: "No echo",
+        detail:
+          "The ultrasonic sent no distance at all. Check TRIG on GPIO16 and ECHO through the " +
+          "1k/2k divider to GPIO17 — and check the jumper on the board, because an AJ-SR04M " +
+          "switched into UART mode never answers Trig/Echo timing.",
+        lastGood,
+      };
+    }
+    if (cm < ULTRASONIC_MIN_CM) {
+      return {
+        code: "out-of-range",
+        ok: false,
+        label: "Inside blind zone",
+        detail:
+          `Echo came back at ${cm.toFixed(1)} cm, inside the sensor's ~${ULTRASONIC_MIN_CM} cm ` +
+          "blind zone, where it cannot measure. Either the tank is overfull or the sensor is " +
+          `mounted too low — it needs to sit at least ${ULTRASONIC_MIN_CM} cm above the highest ` +
+          "the water ever gets.",
+        lastGood,
+      };
+    }
+    if (cm > ULTRASONIC_MAX_CM) {
+      return {
+        code: "out-of-range",
+        ok: false,
+        label: "Out of range",
+        detail:
+          `Echo came back at ${cm.toFixed(1)} cm, past the ${ULTRASONIC_MAX_CM} cm this sensor ` +
+          "can reach. It is most likely aimed out of the tank, or at a surface too angled to " +
+          "bounce a usable echo back.",
+        lastGood,
+      };
+    }
+    // Plausible distance but no level: the two tank anchors cannot describe it.
+    return {
+      code: "off-scale",
+      ok: false,
+      label: "Tank not calibrated",
+      detail:
+        `Reading ${cm.toFixed(1)} cm, which is a real measurement — but TANK_FULL_DISTANCE_CM ` +
+        `(${TANK_FULL_DISTANCE_CM}) and TANK_EMPTY_DISTANCE_CM (${TANK_EMPTY_DISTANCE_CM}) in ` +
+        "lib/config.ts do not describe a tank. Measure both from the sensor face and set them.",
+      lastGood,
+    };
+  }
+
   // The three analog probes all share one failure shape: the device reported,
   // but the voltage cannot have come from a correctly wired probe. Which way it
   // failed points at a different fault, so each one is named separately.
-  const volts = sensorVolts(latest, key);
+  const volts = sensorRaw(latest, key);
   if (volts === null) {
     return {
       code: "not-detected",

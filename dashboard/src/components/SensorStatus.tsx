@@ -2,7 +2,8 @@
 
 import { bandBg, bandColor } from "@/lib/bandStyle";
 import { BAND_LABEL, SENSORS, SENSOR_ORDER, bandOfValue } from "@/lib/config";
-import { ageLabel, sensorHealth, sensorValue, sensorVolts, type SensorHealth } from "@/lib/derive";
+import { ageLabel, sensorHealth, sensorRaw, sensorValue, type SensorHealth } from "@/lib/derive";
+import { RAW_SPEC } from "@/lib/display";
 import type { DeviceState, Reading, SensorKey } from "@/lib/types";
 import { BandIcon, NavIcon } from "./icons";
 
@@ -11,6 +12,7 @@ const SENSOR_ICON: Record<SensorKey, string> = {
   ph: "ph",
   tds: "tds",
   turbidity: "droplet",
+  level: "tank",
 };
 
 function FaultIcon({ size = 14 }: { size?: number }) {
@@ -37,9 +39,11 @@ function Row({
   const spec = SENSORS[sensorKey];
   const value = sensorValue(latest, sensorKey);
   const band = value === null ? null : bandOfValue(value, spec);
-  // Falls back to the raw voltage so a live-but-off-scale probe still shows a
-  // moving number instead of a dash.
-  const volts = sensorVolts(latest, sensorKey);
+  // Falls back to the raw signal so a live-but-off-scale sensor still shows a
+  // moving number instead of a dash — volts for a probe, centimetres for the
+  // ultrasonic.
+  const raw = sensorRaw(latest, sensorKey);
+  const rawSpec = RAW_SPEC[sensorKey];
 
   const tone = health.ok
     ? { c: bandColor[band ?? "safe"], bg: bandBg[band ?? "safe"] }
@@ -115,17 +119,17 @@ function Row({
       </div>
 
       <div className="mono" style={{ fontSize: 14, fontWeight: 500, color: tone.c, whiteSpace: "nowrap" }}>
-        {/* Falls back to the raw voltage so a live-but-off-scale probe still
-            shows a moving number instead of a dash. */}
         {value !== null ? (
           <>
             {value.toFixed(spec.decimals)}
             <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 3 }}>{spec.unit}</span>
           </>
-        ) : volts !== null ? (
+        ) : raw !== null && rawSpec ? (
           <>
-            {volts.toFixed(3)}
-            <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 3 }}>V</span>
+            {raw.toFixed(rawSpec.decimals)}
+            <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 3 }}>
+              {rawSpec.unit}
+            </span>
           </>
         ) : (
           "—"

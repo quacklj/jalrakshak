@@ -4,6 +4,8 @@ import Link from "next/link";
 import { bandBg, bandColor, deviceDot, deviceLabel } from "@/lib/bandStyle";
 import {
   BAND_LABEL,
+  QUALITY_SENSOR_COUNT,
+  QUALITY_SENSOR_ORDER,
   SENSORS,
   SENSOR_COUNT,
   SENSOR_ORDER,
@@ -34,6 +36,12 @@ export default function OverviewPage() {
   const scoreBand = bandOfScore(score);
   const liveSensors = views.filter((v) => v.health.ok).length;
   const allLive = liveSensors === SENSOR_COUNT;
+  // The composite risk only spans the water-quality probes, so its caption has
+  // to count those — saying "from 4 of 5" when tank level is simply not part of
+  // the score would read as a missing sensor.
+  const liveQualitySensors = views.filter(
+    (v) => v.health.ok && QUALITY_SENSOR_ORDER.includes(v.key),
+  ).length;
 
   if (loading) {
     return (
@@ -174,11 +182,11 @@ export default function OverviewPage() {
             <span style={{ fontSize: 15, color: "var(--muted-2)", marginLeft: 4 }}>/100</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
-            {allLive
-              ? `${BAND_LABEL[scoreBand]} band · all ${SENSOR_COUNT} sensors combined`
-              : liveSensors > 0
-                ? `${BAND_LABEL[scoreBand]} band · from ${liveSensors} of ${SENSOR_COUNT} sensors`
-                : "no sensor reporting"}
+            {liveQualitySensors === QUALITY_SENSOR_COUNT
+              ? `${BAND_LABEL[scoreBand]} band · all ${QUALITY_SENSOR_COUNT} quality sensors combined`
+              : liveQualitySensors > 0
+                ? `${BAND_LABEL[scoreBand]} band · from ${liveQualitySensors} of ${QUALITY_SENSOR_COUNT} quality sensors`
+                : "no quality sensor reporting"}
           </div>
         </div>
         <div className="card card-pad">
@@ -240,21 +248,21 @@ export default function OverviewPage() {
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 14.5, fontWeight: 600 }}>Composite risk</div>
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
-                {allLive
-                  ? "Combined severity of every probe. Any one of them alone can drive it."
-                  : liveSensors > 0
-                    ? `Scored from ${liveSensors} of ${SENSOR_COUNT} probes — the rest are not reading, so this understates the real risk.`
-                    : "No probe is reporting, so there is nothing to score."}
+                {liveQualitySensors === QUALITY_SENSOR_COUNT
+                  ? "Combined severity of every quality probe. Any one of them alone can drive it. Tank level sits outside the score."
+                  : liveQualitySensors > 0
+                    ? `Scored from ${liveQualitySensors} of ${QUALITY_SENSOR_COUNT} quality probes — the rest are not reading, so this understates the real risk.`
+                    : "No quality probe is reporting, so there is nothing to score."}
               </div>
               <div style={{ marginTop: 10 }}>
-                {allLive ? (
+                {liveQualitySensors === QUALITY_SENSOR_COUNT ? (
                   <StatusPill band={scoreBand} />
                 ) : (
                   <span
                     className="pill"
                     style={{ color: "var(--critical)", background: "var(--critical-bg)" }}
                   >
-                    Incomplete · {liveSensors}/{SENSOR_COUNT} sensors
+                    Incomplete · {liveQualitySensors}/{QUALITY_SENSOR_COUNT} quality sensors
                   </span>
                 )}
               </div>

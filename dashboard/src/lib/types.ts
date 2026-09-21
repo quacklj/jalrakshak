@@ -1,4 +1,4 @@
-export type SensorKey = "temperature" | "ph" | "tds" | "turbidity";
+export type SensorKey = "temperature" | "ph" | "tds" | "turbidity" | "level";
 
 export type Band = "safe" | "watch" | "warning" | "critical";
 
@@ -47,6 +47,19 @@ export type Reading = {
    */
   turbidityNtu: number | null;
 
+  /**
+   * Distance from the ultrasonic sensor's face down to the water surface, cm.
+   * This is what the AJ-SR04M actually measures — it falls as the tank fills.
+   * null when no echo came back at all.
+   */
+  distanceCm: number | null;
+  /**
+   * Tank fullness 0–100%, from distanceCm against the tank geometry in
+   * config.ts. null when the distance is outside what the sensor can resolve
+   * (see isDistancePlausible) — the tank has no depth until it's measured.
+   */
+  levelPct: number | null;
+
   /** Raw ADS1115 counts, kept for debugging the analog front end. */
   raw?: number;
   rssi?: number;
@@ -71,6 +84,8 @@ export type IngestPayload = {
   ph_v?: number | null;
   tds_v?: number | null;
   turbidity_v?: number | null;
+  /** Ultrasonic distance to the water surface in cm. null when no echo. */
+  distance_cm?: number | null;
   raw?: number;
   rssi?: number;
   uptime_ms?: number;

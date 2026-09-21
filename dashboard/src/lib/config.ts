@@ -126,6 +126,78 @@ export function voltsToTds(volts: number, tempC: number | null): number | null {
   return Math.round(ppm * 10) / 10;
 }
 
+/* ------------------------------------------------------------------ *
+ * Tank level — AJ-SR04M ultrasonic
+ *
+ * The sensor measures DISTANCE DOWN TO THE WATER, not depth: the number
+ * falls as the tank fills. Turning that into a percentage needs two
+ * measurements of your actual tank, taken once with a tape measure:
+ *
+ *   TANK_FULL_DISTANCE_CM   sensor face -> water surface with the tank full
+ *   TANK_EMPTY_DISTANCE_CM  sensor face -> tank floor
+ *
+ * Both are measured from the sensor face, so re-measure if you ever remount
+ * it. The firmware sends the raw centimetres and this is where they become a
+ * level, so re-calibrating the tank never means reflashing the ESP32.
+ * ------------------------------------------------------------------ */
+export const TANK_FULL_DISTANCE_CM = 30;
+export const TANK_EMPTY_DISTANCE_CM = 120;
+
+/**
+ * The AJ-SR04M's usable window.
+ *
+ * The floor is the one that catches people out: unlike an HC-SR04, which sees
+ * from about 2 cm, this sensor has a ~20 cm blind zone and simply returns
+ * nothing — or nonsense — closer than that. Mount it so that even a full tank
+ * sits below the floor here, or the level will drop out exactly when the tank
+ * is fullest.
+ */
+export const ULTRASONIC_MIN_CM = 20;
+export const ULTRASONIC_MAX_CM = 600;
+
+export function isDistancePlausible(cm: number): boolean {
+  return cm >= ULTRASONIC_MIN_CM && cm <= ULTRASONIC_MAX_CM;
+}
+
+/** True when the sensor is mounted too low to ever see a full tank. */
+export function tankGeometryIsSane(): boolean {
+  return TANK_FULL_DISTANCE_CM >= ULTRASONIC_MIN_CM &&
+    TANK_EMPTY_DISTANCE_CM > TANK_FULL_DISTANCE_CM;
+}
+
+/**
+ * Distance to the water surface -> tank fullness, 0–100%.
+ *
+ * Clamped at both ends, which is the opposite of how turbidity handles its
+ * limits — and deliberately so. A turbidity reading past the curve is a real
+ * measurement the maths cannot name, so clamping it would invent a number. A
+ * tank, by contrast, physically cannot be more than full or less than empty:
+ * a distance outside the two anchors is a mounting or echo problem, and 100%
+ * or 0% is the honest reading of it.
+ */
+export function distanceToLevel(cm: number): number | null {
+  if (!isDistancePlausible(cm)) return null;
+  const span = TANK_EMPTY_DISTANCE_CM - TANK_FULL_DISTANCE_CM;
+  if (span <= 0) return null;
+  const pct = ((TANK_EMPTY_DISTANCE_CM - cm) / span) * 100;
+  return Math.round(Math.max(0, Math.min(100, pct)) * 10) / 10;
+}
+
+/** Chartable spec for the raw distance — what the sensor actually returns. */
+export const LEVEL_DISTANCE: SensorSpec = {
+  key: "level",
+  name: "Tank level (distance to surface)",
+  unit: "cm",
+  decimals: 1,
+  // Inverted against the level bands below, because a BIG distance is an
+  // EMPTY tank. Reading this chart means reading it upside down.
+  safe: [TANK_FULL_DISTANCE_CM, TANK_EMPTY_DISTANCE_CM - 5],
+  watch: [ULTRASONIC_MIN_CM, TANK_EMPTY_DISTANCE_CM],
+  warning: [ULTRASONIC_MIN_CM, ULTRASONIC_MAX_CM],
+  extent: [0, TANK_EMPTY_DISTANCE_CM + 20],
+  blurb: "raw echo time on GPIO16/17, converted to cm",
+};
+
 /** Chartable spec for the raw probe voltage — the honest signal while uncalibrated. */
 export const TURBIDITY_VOLTS: SensorSpec = {
   key: "turbidity",
@@ -236,10 +308,36 @@ export const SENSORS: Record<SensorKey, SensorSpec> = {
     extent: [0, TURBIDITY_MAX_NTU],
     blurb: "Analog probe · ADS1115 A2 (est. NTU)",
   },
+  level: {
+    key: "level",
+    name: "Tank level",
+    unit: "%",
+    decimals: 1,
+    // Not a drinking-water standard — this one is about the pumps. Low is the
+    // dangerous end: there is no float switch, so a pump that keeps running
+    // into an empty tank runs dry and burns itself out. The top of the band
+    // stops short of 100 for the same reason in reverse: nothing stops an
+    // inlet pump overflowing a tank that is already full.
+    safe: [25, 95],
+    watch: [12, 98],
+    warning: [5, 100],
+    extent: [0, 100],
+    blurb: "AJ-SR04M ultrasonic · GPIO16 trig / GPIO17 echo",
+  },
 };
 
-export const SENSOR_ORDER: SensorKey[] = ["temperature", "ph", "tds", "turbidity"];
+export const SENSOR_ORDER: SensorKey[] = ["temperature", "ph", "tds", "turbidity", "level"];
 export const SENSOR_COUNT = SENSOR_ORDER.length;
+
+/**
+ * The sensors that say whether the water is safe to drink — which is not all
+ * of them. Tank level is a quantity, not a contaminant: a tank running dry is
+ * an urgent pump problem, but folding it into the composite risk would report
+ * an empty tank of perfectly clean water as a water-quality emergency. It gets
+ * its own card and its own banding instead.
+ */
+export const QUALITY_SENSOR_ORDER: SensorKey[] = ["temperature", "ph", "tds", "turbidity"];
+export const QUALITY_SENSOR_COUNT = QUALITY_SENSOR_ORDER.length;
 
 /* ------------------------------------------------------------------ *
  * Pump relays
@@ -304,19 +402,22 @@ export function scoredValue(r: Reading, key: SensorKey): number | null {
       return r.tds;
     case "turbidity":
       return r.turbidityNtu;
+    case "level":
+      return r.levelPct;
   }
 }
 
 /**
- * Composite risk, 0–100. Probabilistic OR across every sensor that is actually
- * reporting, so any one of them going critical is enough to light up the
- * network — and a sensor that is down contributes nothing rather than being
- * scored as a comfortable zero.
+ * Composite risk, 0–100. Probabilistic OR across every QUALITY sensor that is
+ * actually reporting, so any one of them going critical is enough to light up
+ * the network — and a sensor that is down contributes nothing rather than being
+ * scored as a comfortable zero. Tank level is excluded on purpose; see
+ * QUALITY_SENSOR_ORDER.
  */
 export function riskScore(reading: Reading | null): number {
   if (!reading) return 0;
   let intact = 1;
-  for (const key of SENSOR_ORDER) {
+  for (const key of QUALITY_SENSOR_ORDER) {
     const v = scoredValue(reading, key);
     if (v === null) continue;
     intact *= 1 - severity(v, SENSORS[key]);

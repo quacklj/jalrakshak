@@ -20,6 +20,7 @@ export async function GET(req: Request) {
     "ph_v,ph,ph_status," +
     "tds_v,tds_ppm,tds_status," +
     "turbidity_v,turbidity_ntu,turbidity_status," +
+    "distance_cm,level_pct,level_status," +
     "pump1,pump2,rssi_dbm";
   const status = (v: number | null) => (v === null ? "not_detected" : "ok");
   const relay = (v: boolean | undefined) => (v === undefined ? "" : v ? "on" : "off");
@@ -40,6 +41,9 @@ export async function GET(req: Request) {
         r.turbidityV ?? "",
         r.turbidityNtu ?? "",
         status(r.turbidityNtu),
+        r.distanceCm ?? "",
+        r.levelPct ?? "",
+        status(r.levelPct),
         relay(r.relays?.pump1),
         relay(r.relays?.pump2),
         r.rssi ?? "",
