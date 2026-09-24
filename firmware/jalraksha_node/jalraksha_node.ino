@@ -115,6 +115,7 @@ const char* SERVER_HOST = JR_SERVER_HOST;
 const char* INGEST_PATH = "/api/ingest";
 const char* RELAY_PATH = "/api/relays?fmt=text";
 const char* SERVO_PATH = "/api/servo?fmt=text";
+const char* SERVO_CAL_PATH = "/api/servo/cal?fmt=text";
 
 const char* DEVICE_ID = "ESP32-JR01";
 const char* DEVICE_TOKEN = JR_DEVICE_TOKEN;
@@ -190,10 +191,14 @@ const int SERVO_RES_BITS = 16;
    NEUTRAL is worth trimming on its own: a CR MG996R often creeps at exactly
    1500 us, and a servo that creeps while it believes it is stopped destroys
    the dead reckoning silently. Nudge it a few us until the horn is still. */
-const int SERVO_NEUTRAL_US = 1500;
-const int SERVO_SPEED_OFFSET_US = 300;
-const int SERVO_FORWARD_US = SERVO_NEUTRAL_US + SERVO_SPEED_OFFSET_US;  // 1800
-const int SERVO_REVERSE_US = SERVO_NEUTRAL_US - SERVO_SPEED_OFFSET_US;  // 1200
+/* These start at the bench figures and are then overwritten by whatever the
+   dashboard's calibration page holds. The server owns them, not this flash:
+   reflashing the node must not lose an afternoon of bench work, and a
+   replacement board should pick up the same numbers the moment it boots. */
+int servoNeutralUs = 1500;
+int servoSpeedOffsetUs = 300;
+inline int servoForwardUs() { return servoNeutralUs + servoSpeedOffsetUs; }
+inline int servoReverseUs() { return servoNeutralUs - servoSpeedOffsetUs; }
 
 /* Calibration, and it must match dashboard/src/lib/config.ts. Milliseconds of
    full-speed travel per sweep, measured on the bench. Not proportional: the
@@ -201,13 +206,28 @@ const int SERVO_REVERSE_US = SERVO_NEUTRAL_US - SERVO_SPEED_OFFSET_US;  // 1200
    goes on. Interpolation between the anchors is therefore piecewise. */
 const int SERVO_ANCHOR_COUNT = 4;
 const float SERVO_ANCHOR_DEG[SERVO_ANCHOR_COUNT] = { 0, 120, 240, 360 };
-const unsigned long SERVO_FWD_MS[SERVO_ANCHOR_COUNT] = { 0, 715, 1460, 2300 };
-const unsigned long SERVO_REV_MS[SERVO_ANCHOR_COUNT] = { 0, 647, 1320, 2080 };
+unsigned long servoFwdMs[SERVO_ANCHOR_COUNT] = { 0, 715, 1460, 2300 };
+unsigned long servoRevMs[SERVO_ANCHOR_COUNT] = { 0, 647, 1320, 2080 };
+
+/* The dashboard only measures a full turn in reverse, so the two intermediate
+   reverse figures are the forward ones scaled by that ratio. Recomputed
+   whenever a new calibration arrives. */
+void rebuildReverseTable(unsigned long tRev) {
+  float k = servoFwdMs[3] > 0 ? (float)tRev / (float)servoFwdMs[3] : 1.0f;
+  servoRevMs[0] = 0;
+  servoRevMs[1] = (unsigned long)(servoFwdMs[1] * k);
+  servoRevMs[2] = (unsigned long)(servoFwdMs[2] * k);
+  servoRevMs[3] = tRev;
+}
 
 /* Nothing should ever run the motor longer than a full turn plus a margin. If
    a computed duration exceeds this the command is refused rather than trusted,
    because the failure mode is a servo that never stops. */
 const unsigned long SERVO_MAX_MOVE_MS = 2600;
+/* A raw bench run is allowed longer than a positioning move — measuring a
+   revolution means driving for several of them — but still not forever. */
+const unsigned long SERVO_MAX_RUN_MS = 30000;
+const unsigned long SERVO_CAL_POLL_MS = 15000;
 
 const unsigned long SERVO_POLL_MS = 1000;
 
@@ -243,6 +263,30 @@ unsigned long lastServoPoll = 0;
    sitting on a stale angle for the rest of the post interval. A 2 s move
    followed by 8 s of silence makes the dashboard look frozen. */
 bool servoReportDue = false;
+
+/* ---- bench modes, for the calibration page ----
+   These drive the motor for a time instead of to an angle, which is what
+   measuring a servo actually requires. While any of them is running the angle
+   is meaningless, so they all end by marking the position uncertain. */
+bool servoFreeSpinning = false;         // running until told to stop
+unsigned long servoSpinStart = 0;
+unsigned long servoLastSpinMs = 0;      // what the last free spin measured
+bool servoRawRun = false;               // running for a fixed time
+unsigned long servoRawStart = 0;
+unsigned long servoRawMs = 0;
+
+/* Step test: 0 -> 120 -> 240 -> 360, pausing at each. Three identical 120
+   degree legs, so the sweep is one constant rather than a table of targets. */
+const float SERVO_SEQ_STEP_DEG = 120.0f;
+const int SERVO_SEQ_LEGS = 3;
+bool seqActive = false;
+bool seqPausing = false;
+int seqIndex = 0;
+unsigned long seqPauseStart = 0;
+unsigned long seqPauseMs = 2000;
+
+long servoCalRev = -1;                  // calibration revision last applied
+unsigned long lastCalPoll = 0;
 
 // ---- accumulators, averaged between uploads ----
 float tempSum = 0.0f;
@@ -289,7 +333,12 @@ void servoStartMove(float sweepDeg, int dir, const char* why);
 void servoGoTo(float targetDeg);
 void serviceServo();
 void pollServo();
+void pollServoCal();
+void serviceBench();
+void startRawRun(long signedMs);
+void startFreeSpin(int dir);
 float normDeg(float d);
+void rebuildReverseTable(unsigned long tRev);
 
 // Why the chip last restarted. Uploaded with every reading, because on the S3
 // the USB serial port dies with each reset — so the dashboard is often the only
@@ -500,7 +549,7 @@ void servoHalt(const char* why) {
     Serial.print(why);
     Serial.println("] - angle is an estimate now, re-zero when you can");
   }
-  servoWriteUs(SERVO_NEUTRAL_US);
+  servoWriteUs(servoNeutralUs);
 }
 
 /* Milliseconds to sweep this many degrees, interpolated piecewise between the
@@ -508,7 +557,7 @@ void servoHalt(const char* why) {
    because the servo slows as a move goes on: one constant puts a 180 degree
    move out by roughly 10 degrees. */
 unsigned long servoMsForSweep(float sweepDeg, int dir) {
-  const unsigned long* table = (dir > 0) ? SERVO_FWD_MS : SERVO_REV_MS;
+  const unsigned long* table = (dir > 0) ? servoFwdMs : servoRevMs;
   float s = sweepDeg;
   if (s < 0) s = 0;
   if (s > 360.0f) s = 360.0f;
@@ -547,7 +596,7 @@ void servoStartMove(float sweepDeg, int dir, const char* why) {
   servoMoveStart = millis();
   servoMoving = true;
 
-  servoWriteUs(dir > 0 ? SERVO_FORWARD_US : SERVO_REVERSE_US);
+  servoWriteUs(dir > 0 ? servoForwardUs() : servoReverseUs());
 
   Serial.print("Servo: ");
   Serial.print(servoDeg, 1);
@@ -597,7 +646,7 @@ void serviceServo() {
   unsigned long elapsed = millis() - servoMoveStart;
   if (elapsed < servoMoveMs) return;
 
-  servoWriteUs(SERVO_NEUTRAL_US);
+  servoWriteUs(servoNeutralUs);
   servoDeg = normDeg(servoMoveFrom + servoMoveDir * servoMoveSweep);
   servoMoving = false;
   servoMovesSinceZero++;
@@ -608,6 +657,118 @@ void serviceServo() {
   Serial.print(" deg (believed, ");
   Serial.print(servoMovesSinceZero);
   Serial.println(" moves since zero)");
+}
+
+/* ---- bench modes -------------------------------------------------------
+   Driving for a time rather than to an angle. Used only by the calibration
+   page, and every one of them leaves the position uncertain, because that is
+   the truth: after free-spinning the servo five turns by eye, the node has no
+   idea where the horn is. */
+
+void startRawRun(long signedMs) {
+  unsigned long ms = (unsigned long)(signedMs < 0 ? -signedMs : signedMs);
+  if (ms == 0 || ms > SERVO_MAX_RUN_MS) return;
+  servoHalt("superseded by a bench run");
+  servoRawRun = true;
+  servoRawStart = millis();
+  servoRawMs = ms;
+  servoUncertain = true;
+  servoWriteUs(signedMs < 0 ? servoReverseUs() : servoForwardUs());
+  Serial.print("Bench: running ");
+  Serial.print(signedMs < 0 ? "reverse " : "forward ");
+  Serial.print(ms);
+  Serial.println(" ms");
+}
+
+void startFreeSpin(int dir) {
+  servoHalt("superseded by a free spin");
+  servoFreeSpinning = true;
+  servoSpinStart = millis();
+  servoUncertain = true;
+  servoWriteUs(dir < 0 ? servoReverseUs() : servoForwardUs());
+  Serial.println("Bench: free spinning - press Stop & measure when you have counted the turns");
+}
+
+/* Ends whichever bench mode is running, and steps the sequence test along.
+   Non-blocking, same as serviceServo(). */
+void serviceBench() {
+  if (servoRawRun && millis() - servoRawStart >= servoRawMs) {
+    servoRawRun = false;
+    servoWriteUs(servoNeutralUs);
+    servoReportDue = true;
+    Serial.println("Bench: run finished");
+  }
+
+  // The step test advances only once the previous leg has actually landed.
+  if (seqActive && !servoMoving && !seqPausing) {
+    seqIndex++;
+    if (seqIndex >= SERVO_SEQ_LEGS) {
+      seqActive = false;
+      // 360 is the same physical spot as the 0 mark, so the lap ends at zero.
+      // Whatever it visibly misses the mark by IS the accumulated error — the
+      // whole point of the test — so it is reported, not quietly corrected.
+      servoDeg = 0.0f;
+      servoReportDue = true;
+      Serial.println("Bench: step test done - should be back on the 0 mark");
+    } else {
+      seqPausing = true;
+      seqPauseStart = millis();
+    }
+  }
+  if (seqActive && seqPausing && millis() - seqPauseStart >= seqPauseMs) {
+    seqPausing = false;
+    servoStartMove(SERVO_SEQ_STEP_DEG, 1, "step test");
+  }
+}
+
+/* Fetches the calibration the dashboard holds: "rev,stop,speed,t120,t240,t360,tRev".
+   Applied only when the revision changes, so this is cheap to poll. */
+void pollServoCal() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  char url[160];
+  if (!buildUrl(url, sizeof(url), SERVO_CAL_PATH)) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  if (!http.begin(client, url)) return;
+  http.setTimeout(3000);
+  if (strlen(DEVICE_TOKEN) > 0) http.addHeader("x-device-token", DEVICE_TOKEN);
+
+  if (http.GET() == 200) {
+    String body = http.getString();
+    body.trim();
+    long rev = -1;
+    int stopUs = 0, speedUs = 0;
+    unsigned long a = 0, b = 0, c = 0, r = 0;
+    if (sscanf(body.c_str(), "%ld,%d,%d,%lu,%lu,%lu,%lu",
+               &rev, &stopUs, &speedUs, &a, &b, &c, &r) == 7 &&
+        rev >= 0 && a > 0 && a < b && b < c && r > 0 &&
+        stopUs >= 1400 && stopUs <= 1600 && speedUs >= 50 && speedUs <= 500) {
+      if (rev != servoCalRev) {
+        servoCalRev = rev;
+        servoNeutralUs = stopUs;
+        servoSpeedOffsetUs = speedUs;
+        servoFwdMs[1] = a;
+        servoFwdMs[2] = b;
+        servoFwdMs[3] = c;
+        rebuildReverseTable(r);
+        if (!servoMoving && !servoRawRun && !servoFreeSpinning) servoWriteUs(servoNeutralUs);
+        Serial.print("Calibration rev ");
+        Serial.print(rev);
+        Serial.print(": stop ");
+        Serial.print(stopUs);
+        Serial.print("us, speed +/-");
+        Serial.print(speedUs);
+        Serial.print("us, ");
+        Serial.print(a); Serial.print("/");
+        Serial.print(b); Serial.print("/");
+        Serial.print(c); Serial.print(" fwd, ");
+        Serial.print(r); Serial.println(" rev");
+      }
+    }
+  }
+  http.end();
 }
 
 /* Asks the dashboard what the servo should be doing.
@@ -649,7 +810,51 @@ void pollServo() {
             servoGoTo(arg);
             break;
           case 'S':
+            // Stop is also how a free spin is measured: the node reports how
+            // long it ran, because network latency would corrupt anything the
+            // browser tried to time itself.
+            if (servoFreeSpinning) {
+              servoLastSpinMs = millis() - servoSpinStart;
+              Serial.print("Bench: free spin measured ");
+              Serial.print(servoLastSpinMs);
+              Serial.println(" ms");
+            }
+            servoFreeSpinning = false;
+            servoRawRun = false;
+            seqActive = false;
+            seqPausing = false;
             servoHalt("dashboard stop");
+            servoWriteUs(servoNeutralUs);
+            servoReportDue = true;
+            break;
+
+          case 'R':
+            startRawRun((long)arg);
+            break;
+
+          case 'P':
+            startFreeSpin(arg < 0 ? -1 : 1);
+            break;
+
+          case 'A':
+            // Test one calibration point. The mark is assumed to be at 0, so
+            // the position is declared zero first and the move measured from
+            // there — which is exactly how the timings were calibrated.
+            if (servoMoving) servoHalt("superseded by an angle test");
+            servoDeg = 0.0f;
+            servoUncertain = false;
+            servoStartMove(normDeg(arg) == 0 ? 360.0f : normDeg(arg), 1, "angle test");
+            break;
+
+          case 'Q':
+            if (servoMoving) servoHalt("superseded by the step test");
+            seqPauseMs = (unsigned long)(arg < 0 ? 0 : (arg > 30000 ? 30000 : arg));
+            servoDeg = 0.0f;
+            servoUncertain = false;
+            seqActive = true;
+            seqIndex = 0;
+            seqPausing = false;
+            servoStartMove(SERVO_SEQ_STEP_DEG, 1, "step test");
             break;
           case 'Z':
             // Re-zero. Declares the current physical position to be 0 without
@@ -899,9 +1104,9 @@ void setup() {
   Serial.print("Servo    : GPIO ");
   Serial.print(SERVO_PIN);
   Serial.print(", drive ");
-  Serial.print(SERVO_FORWARD_US);
+  Serial.print(servoForwardUs());
   Serial.print("/");
-  Serial.print(SERVO_REVERSE_US);
+  Serial.print(servoReverseUs());
   Serial.println(" us, stopped, believed at 0 deg (nothing measures this)");
 
   Serial.print("Pumps    : GPIO ");
@@ -917,7 +1122,7 @@ void setup() {
      as "run", and a motor that starts itself on every reset is the kind of
      fault you chase for a day. */
   ledcAttach(SERVO_PIN, SERVO_CHANNEL_FREQ, SERVO_RES_BITS);
-  servoWriteUs(SERVO_NEUTRAL_US);
+  servoWriteUs(servoNeutralUs);
 
   // Trig must idle low, or the first ping reads whatever the pin was doing.
   pinMode(TRIG_PIN, OUTPUT);
@@ -1124,12 +1329,12 @@ void uploadReading() {
            "\"turbidity_v\":%s,\"distance_cm\":%s,\"raw\":%d,"
            "\"relay1\":%d,\"relay2\":%d,"
            "\"servo_deg\":%.1f,\"servo_moving\":%d,\"servo_moves\":%d,"
-           "\"servo_uncertain\":%d,\"servo_ack\":%ld,"
+           "\"servo_uncertain\":%d,\"servo_ack\":%ld,\"servo_spin_ms\":%lu,"
            "\"rssi\":%d,\"uptime_ms\":%lu,\"reset_reason\":\"%s\",\"heap\":%lu}",
            DEVICE_ID, tempField, phField, tdsField, turbField, distField, avgRaw,
            relayOn[0] ? 1 : 0, relayOn[1] ? 1 : 0,
            reportDeg, servoMoving ? 1 : 0, servoMovesSinceZero,
-           servoUncertain ? 1 : 0, servoSeq,
+           servoUncertain ? 1 : 0, servoSeq, servoLastSpinMs,
            WiFi.RSSI(), millis(), RESET_REASON, (unsigned long)ESP.getFreeHeap());
 
   char url[160];
@@ -1212,6 +1417,7 @@ void loop() {
   // Before the network calls, and never blocking: a move that overruns because
   // a poll was slow is a move that lands in the wrong place.
   serviceServo();
+  serviceBench();
 
   if (nowMs - lastRelayPoll >= RELAY_POLL_MS) {
     lastRelayPoll = nowMs;
@@ -1221,6 +1427,11 @@ void loop() {
   if (nowMs - lastServoPoll >= SERVO_POLL_MS) {
     lastServoPoll = nowMs;
     pollServo();
+  }
+
+  if (lastCalPoll == 0 || nowMs - lastCalPoll >= SERVO_CAL_POLL_MS) {
+    lastCalPoll = nowMs;
+    pollServoCal();
   }
 
   /* A finished move uploads straight away rather than waiting out the rest of

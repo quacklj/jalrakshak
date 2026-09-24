@@ -51,7 +51,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "bad device token" }, { status: 401 });
   }
 
-  let body: { command?: unknown; deg?: unknown; revs?: unknown };
+  let body: {
+    command?: unknown;
+    deg?: unknown;
+    revs?: unknown;
+    ms?: unknown;
+    dir?: unknown;
+    pauseMs?: unknown;
+  };
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -71,6 +78,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "deg must be a number" }, { status: 400 });
     }
     arg = body.deg;
+  }
+  if (body.command === "testangle") {
+    if (typeof body.deg !== "number" || !Number.isFinite(body.deg)) {
+      return NextResponse.json({ ok: false, error: "deg must be a number" }, { status: 400 });
+    }
+    arg = body.deg;
+  }
+  if (body.command === "run") {
+    // Signed: the sign is the direction, the magnitude is the duration. Capped
+    // well under a minute because this drives a motor with nothing watching it.
+    if (typeof body.ms !== "number" || !Number.isFinite(body.ms) || body.ms === 0) {
+      return NextResponse.json({ ok: false, error: "ms must be a non-zero number" }, { status: 400 });
+    }
+    if (Math.abs(body.ms) > 30000) {
+      return NextResponse.json({ ok: false, error: "ms must be under 30000" }, { status: 400 });
+    }
+    arg = Math.round(body.ms);
+  }
+  if (body.command === "spin") {
+    if (body.dir !== 1 && body.dir !== -1) {
+      return NextResponse.json({ ok: false, error: "dir must be 1 or -1" }, { status: 400 });
+    }
+    arg = body.dir;
+  }
+  if (body.command === "steptest") {
+    const pause = typeof body.pauseMs === "number" ? body.pauseMs : 2000;
+    if (!Number.isFinite(pause) || pause < 0 || pause > 30000) {
+      return NextResponse.json({ ok: false, error: "pauseMs must be 0-30000" }, { status: 400 });
+    }
+    arg = Math.round(pause);
   }
   if (body.command === "turn") {
     // A turn is a flush, not a winder: one lap each way, and never zero laps.

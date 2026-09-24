@@ -32,12 +32,17 @@ const NAV = [
       { href: "/device", id: "device", label: "Device" },
     ],
   },
+  {
+    label: "Bench",
+    items: [{ href: "/calibrate", id: "servo", label: "Servo Calibration" }],
+  },
 ];
 
 const TITLES: Record<string, string> = {
   "/": "Overview",
   "/live": "Live Monitoring",
   "/history": "History & Export",
+  "/calibrate": "Servo Calibration",
   "/device": "Device",
 };
 

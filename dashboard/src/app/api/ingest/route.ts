@@ -126,6 +126,7 @@ export async function POST(req: Request) {
     servoMovesSinceZero: num(body.servo_moves) ?? undefined,
     servoUncertain: bool(body.servo_uncertain),
     servoAckSeq: num(body.servo_ack) ?? undefined,
+    servoSpinMs: num(body.servo_spin_ms) ?? undefined,
   };
 
   addReading(reading);

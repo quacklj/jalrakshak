@@ -68,8 +68,11 @@ const relays = [false, false];
 const FWD_MS = [0, 715, 1460, 2300];
 const REV_MS = [0, 647, 1320, 2080];
 const ANCHORS = [0, 120, 240, 360];
-const servo = { deg: 0, moving: false, uncertain: true, moves: 0, seq: 0 };
+const servo = { deg: 0, moving: false, uncertain: true, moves: 0, seq: 0, spinMs: 0 };
 let servoMove = null; // { from, sweep, dir, ms, startedAt }
+let servoSpin = null; // free spin: { startedAt }
+let servoRaw = null;  // fixed-time bench run: { startedAt, ms }
+let stepTest = null;  // { leg, pauseMs, pausingSince }
 
 const normDeg = (d) => ((d % 360) + 360) % 360;
 
@@ -106,13 +109,38 @@ function haltServo(interrupted) {
 }
 
 function serviceServo() {
-  if (!servoMove) return;
-  if (Date.now() - servoMove.startedAt < servoMove.ms) return;
-  servo.deg = normDeg(servoMove.from + servoMove.dir * servoMove.sweep);
-  servo.moves++;
-  servoMove = null;
-  servo.moving = false;
-  console.log(`  servo arrived ~${servo.deg.toFixed(1)}° (${servo.moves} moves since zero)`);
+  if (servoRaw && Date.now() - servoRaw.startedAt >= servoRaw.ms) {
+    servoRaw = null;
+    console.log("  bench run finished");
+  }
+
+  if (servoMove && Date.now() - servoMove.startedAt >= servoMove.ms) {
+    servo.deg = normDeg(servoMove.from + servoMove.dir * servoMove.sweep);
+    servo.moves++;
+    servoMove = null;
+    servo.moving = false;
+    console.log(`  servo arrived ~${servo.deg.toFixed(1)}° (${servo.moves} moves since zero)`);
+  }
+
+  // Step test advances only once the previous leg has landed.
+  if (stepTest && !servo.moving && stepTest.pausingSince === null) {
+    stepTest.leg++;
+    if (stepTest.leg >= 3) {
+      stepTest = null;
+      servo.deg = 0; // 360 is the same spot as the 0 mark
+      console.log("  step test done - back on the 0 mark");
+    } else {
+      stepTest.pausingSince = Date.now();
+    }
+  }
+  if (
+    stepTest &&
+    stepTest.pausingSince !== null &&
+    Date.now() - stepTest.pausingSince >= stepTest.pauseMs
+  ) {
+    stepTest.pausingSince = null;
+    startMove(120, 1);
+  }
 }
 
 /** The firmware's servo poll: "<seq>,<letter>,<arg>", acted on only when seq changes. */
@@ -121,7 +149,7 @@ async function pollServo() {
   try {
     const res = await fetch(SERVO, { headers: auth });
     if (!res.ok) return;
-    const m = (await res.text()).trim().match(/^(\d+),([GSZT]),(-?\d+)$/);
+    const m = (await res.text()).trim().match(/^(\d+),([GSZTRPAQ]),(-?\d+)$/);
     if (!m) return;
     const [, seqRaw, cmd, argRaw] = m;
     const seq = Number(seqRaw);
@@ -137,8 +165,37 @@ async function pollServo() {
       if (msForSweep(rev, -1) < msForSweep(fwd, 1)) startMove(rev, -1);
       else startMove(fwd, 1);
     } else if (cmd === "S") {
+      if (servoSpin) {
+        // The node times its own spin; the browser only reads the answer back.
+        servo.spinMs = Date.now() - servoSpin.startedAt;
+        console.log(`  free spin measured ${servo.spinMs} ms`);
+        servoSpin = null;
+      }
+      servoRaw = null;
+      stepTest = null;
       haltServo(true);
       console.log("  servo STOPPED");
+    } else if (cmd === "R") {
+      haltServo(true);
+      servoRaw = { startedAt: Date.now(), ms: Math.abs(arg) };
+      servo.uncertain = true;
+      console.log(`  bench run ${arg < 0 ? "reverse" : "forward"} ${Math.abs(arg)}ms`);
+    } else if (cmd === "P") {
+      haltServo(true);
+      servoSpin = { startedAt: Date.now() };
+      servo.uncertain = true;
+      console.log("  free spinning");
+    } else if (cmd === "A") {
+      haltServo(true);
+      servo.deg = 0;
+      servo.uncertain = false;
+      startMove(normDeg(arg) === 0 ? 360 : normDeg(arg), 1);
+    } else if (cmd === "Q") {
+      haltServo(true);
+      servo.deg = 0;
+      servo.uncertain = false;
+      stepTest = { leg: 0, pauseMs: Math.max(0, Math.min(30000, arg)), pausingSince: null };
+      startMove(120, 1);
     } else if (cmd === "Z") {
       haltServo(true);
       servo.deg = 0;
@@ -149,8 +206,12 @@ async function pollServo() {
       haltServo(true);
       startMove(360, arg < 0 ? -1 : 1);
     }
-  } catch {
-    /* the real node just retries next second too */
+  } catch (err) {
+    // A fetch failure is expected and the real node just retries next second.
+    // Anything else is a bug in here, and silence is how it stays one.
+    if (!(err instanceof TypeError && String(err.message).includes("fetch"))) {
+      console.error("pollServo:", err.message);
+    }
   }
 }
 
@@ -217,6 +278,7 @@ function step() {
     servo_moves: servo.moves,
     servo_uncertain: servo.uncertain ? 1 : 0,
     servo_ack: servo.seq,
+    servo_spin_ms: servo.spinMs,
     relay1: relays[0] ? 1 : 0,
     relay2: relays[1] ? 1 : 0,
     rssi: -50 - Math.round(Math.random() * 20),

@@ -388,6 +388,30 @@ losing the dashboard mid-move still ends with the motor stopped. On top of that:
 > rail shared with the relay board that browns out the ESP32 and takes all five sensors down with
 > it — the same failure the pumps can cause, but harder and longer.
 
+### The calibration bench — `/calibrate`
+
+A page of its own, separate from Live Monitoring, because everything on it drives the motor for a
+measured *time* rather than to an angle — which is what measuring a servo requires, and exactly
+what you do not want one mis-tap from the operating controls.
+
+| Tool | What it does |
+| --- | --- |
+| **Test 120 / 240 / 360** | Declares the mark 0, runs that angle, stops. Overshot → lower the ms |
+| **Step test** | 0 → 120 → 240 → 360 with pauses. Should land back on the mark |
+| **Test 1 rev −** | A raw timed run in reverse, for the reverse figure |
+| **Spin + / − , Stop & measure** | Free-spin, count turns by eye, node reports ms per turn |
+| **Stop pulse** | Slider, 1400–1600 µs. Trim until the horn is completely still |
+| **Speed offset** | ±µs from neutral. **Changing this invalidates every timing** |
+
+**The numbers live on the server, not in the ESP32's flash.** The bench sketch kept them in
+Preferences, which works right up until you reflash the node and lose an afternoon of bench work.
+The node fetches them every 15 s and applies them when the revision changes, so a replacement board
+picks up the same calibration as soon as it boots.
+
+The step test is the honest one: a full lap ends where it started, so **whatever it visibly misses
+the 0 mark by is your accumulated error.** The firmware reports that rather than quietly snapping
+the angle back to zero.
+
 ### Trimming
 
 If the horn creeps while stopped, adjust `SERVO_NEUTRAL_US` in the sketch (1500 µs is nominal; a

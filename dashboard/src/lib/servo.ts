@@ -39,8 +39,19 @@ function store(): Command {
   return globalRef.__jalrakshaServo;
 }
 
+const COMMANDS: ServoCommand[] = [
+  "goto",
+  "stop",
+  "zero",
+  "turn",
+  "run",
+  "spin",
+  "testangle",
+  "steptest",
+];
+
 export function isServoCommand(v: unknown): v is ServoCommand {
-  return v === "goto" || v === "stop" || v === "zero" || v === "turn";
+  return typeof v === "string" && (COMMANDS as string[]).includes(v);
 }
 
 export function issueServo(command: ServoCommand, arg = 0, source = "dashboard"): Command {
@@ -80,6 +91,18 @@ export function servoView(): ServoView {
       planSweep = plan.sweep;
       planMs = plan.ms;
     }
+  } else if (c.command === "testangle") {
+    // Starts by declaring the mark to be 0, so the predicted move is measured
+    // from 0 rather than from wherever the node currently believes it is.
+    targetDeg = c.arg;
+    const plan = servoPlan(0, c.arg);
+    planDir = plan.dir;
+    planSweep = plan.sweep;
+    planMs = plan.ms;
+  } else if (c.command === "run") {
+    planDir = c.arg < 0 ? -1 : 1;
+    planSweep = null;
+    planMs = Math.abs(c.arg);
   } else if (c.command === "turn") {
     targetDeg = actualDeg;
     planDir = c.arg < 0 ? -1 : 1;
@@ -103,6 +126,7 @@ export function servoView(): ServoView {
     movesSinceZero: latest?.servoMovesSinceZero ?? null,
     uncertain: latest?.servoUncertain ?? false,
     ackSeq: latest?.servoAckSeq ?? null,
+    lastSpinMs: latest?.servoSpinMs ?? null,
   };
 }
 
@@ -111,6 +135,10 @@ const LETTER: Record<ServoCommand, string> = {
   stop: "S",
   zero: "Z",
   turn: "T",
+  run: "R",
+  spin: "P",
+  testangle: "A",
+  steptest: "Q",
 };
 
 /**

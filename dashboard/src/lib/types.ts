@@ -100,6 +100,8 @@ export type Reading = {
   servoUncertain?: boolean;
   /** The command sequence the node last acted on. See ServoView.seq. */
   servoAckSeq?: number;
+  /** Duration of the last free spin, ms, timed on the node. */
+  servoSpinMs?: number;
 };
 
 /** Payload the ESP32 posts to /api/ingest. */
@@ -126,6 +128,8 @@ export type IngestPayload = {
   servo_moves?: number;
   servo_uncertain?: number | boolean;
   servo_ack?: number;
+  /** Duration of the last free spin, ms, timed on the node. */
+  servo_spin_ms?: number;
 };
 
 /* ------------------------------------------------------------------ *
@@ -139,8 +143,25 @@ export type IngestPayload = {
  *   stop  halt immediately, wherever it is
  *   zero  declare the current physical position to be 0°, without moving
  *   turn  a whole revolution, for flushing — a movement, not a position
+ *
+ * The rest exist for the calibration bench, where you are measuring the servo
+ * rather than using it, and want the motor driven for an exact time with no
+ * angle maths in the way:
+ *
+ *   run       drive for a signed number of milliseconds, then stop
+ *   spin      drive continuously until told to stop, for timing revolutions
+ *   testangle assume the mark is at 0, then travel to an angle and stop
+ *   steptest  0 → 120 → 240 → 360 with a pause at each, from the 0 mark
  */
-export type ServoCommand = "goto" | "stop" | "zero" | "turn";
+export type ServoCommand =
+  | "goto"
+  | "stop"
+  | "zero"
+  | "turn"
+  | "run"
+  | "spin"
+  | "testangle"
+  | "steptest";
 
 export type ServoView = {
   /**
@@ -170,6 +191,13 @@ export type ServoView = {
   uncertain: boolean;
   /** null until the node has acknowledged any command at all. */
   ackSeq: number | null;
+  /**
+   * How long the last free spin ran, milliseconds, as timed by the node. This
+   * is the measurement the "spin N turns and stop" bench test produces, and it
+   * has to come from the node because network latency would corrupt anything
+   * the browser timed itself.
+   */
+  lastSpinMs: number | null;
 };
 
 /** One pump as the dashboard and the API talk about it. */
