@@ -62,6 +62,7 @@
     - "OneWire"            by Jim Studt / Paul Stoffregen
     - "DallasTemperature"  by Miles Burton
     - "Adafruit ADS1X15"   by Adafruit
+    - "ESP32Servo"         by Kevin Harrington
   The ultrasonic needs no library at all — it is plain pulseIn() timing.
   WiFi.h / HTTPClient.h ship with the ESP32 board package. No JSON library is
   needed: the relay poll returns plain text, one character per relay.
@@ -74,6 +75,7 @@
 */
 
 #include <Wire.h>
+#include <ESP32Servo.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <Adafruit_ADS1X15.h>
@@ -176,8 +178,22 @@ const int DIST_WINDOW = 24;
    core already has the peripheral, and one less dependency is one less thing
    to install on a fresh machine before the node will build. */
 const int SERVO_PIN = 16;
-const int SERVO_CHANNEL_FREQ = 50;   // standard 20 ms servo frame
-const int SERVO_RES_BITS = 16;
+const int SERVO_FREQ_HZ = 50;        // standard 20 ms servo frame
+
+/* Driven through ESP32Servo rather than raw LEDC, and that is not a style
+   choice — it is a bug fix.
+
+   The ESP32-S3's LEDC timers are 14 bits wide (SOC_LEDC_TIMER_BIT_WIDTH), and
+   this sketch previously asked ledcAttach() for 16. The core rejects anything
+   over the maximum and returns false, so the pin was never attached, every
+   ledcWrite() silently no-oped, and the servo received no pulses at all. On the
+   original ESP32 the limit is 20 bits and the same code would have worked,
+   which is exactly the kind of difference that costs an evening.
+
+   The library picks a valid resolution itself, and it is what the standalone
+   bench sketch was already proven on with this servo and this board. */
+Servo servoOut;
+bool servoAttached = false;
 
 /* Pulse widths. A continuous-rotation servo reads these as SPEED, not angle.
 
@@ -517,14 +533,13 @@ float normDeg(float d) {
   return d;
 }
 
-/* Pulse width -> LEDC duty. The frame is 20 ms at 50 Hz, so a pulse is that
-   fraction of full scale. */
+/* Writes a pulse width, or does nothing if the servo never attached.
+
+   The no-op case is reported rather than hidden: an attach that fails silently
+   is what made the servo look dead with no error anywhere to explain it. */
 void servoWriteUs(int us) {
-  const long full = (1L << SERVO_RES_BITS) - 1;
-  long duty = (long)((float)us / 20000.0f * (float)full);
-  if (duty < 0) duty = 0;
-  if (duty > full) duty = full;
-  ledcWrite(SERVO_PIN, (uint32_t)duty);
+  if (!servoAttached) return;
+  servoOut.writeMicroseconds(us);
 }
 
 /* Stops the motor wherever it is.
@@ -1103,11 +1118,28 @@ void setup() {
 
   Serial.print("Servo    : GPIO ");
   Serial.print(SERVO_PIN);
-  Serial.print(", drive ");
-  Serial.print(servoForwardUs());
-  Serial.print("/");
-  Serial.print(servoReverseUs());
-  Serial.println(" us, stopped, believed at 0 deg (nothing measures this)");
+  if (!servoAttached) {
+    Serial.println("  ** ATTACH FAILED - no pulses, the servo cannot move **");
+    Serial.println("           All 4 LEDC timers are in use, or the pin cannot do PWM.");
+  } else {
+    Serial.print(", drive ");
+    Serial.print(servoForwardUs());
+    Serial.print("/");
+    Serial.print(servoReverseUs());
+    Serial.println(" us, stopped, believed at 0 deg (nothing measures this)");
+
+    /* A short twitch, before Wi-Fi. Two things are worth proving on their own,
+       because together they are indistinguishable from each other: that the
+       signal path works at all, and that the dashboard can reach the node. If
+       the horn does not move here, nothing on the dashboard will fix it. */
+    Serial.println("           self-test: brief twitch...");
+    servoWriteUs(servoForwardUs());
+    delay(180);
+    servoWriteUs(servoReverseUs());
+    delay(180);
+    servoWriteUs(servoNeutralUs);
+    Serial.println("           if the horn did not move, it is wiring or power, not the network");
+  }
 
   Serial.print("Pumps    : GPIO ");
   Serial.print(RELAY_PINS[0]);
@@ -1121,7 +1153,9 @@ void setup() {
      a continuous-rotation servo a floating signal pin during boot can be read
      as "run", and a motor that starts itself on every reset is the kind of
      fault you chase for a day. */
-  ledcAttach(SERVO_PIN, SERVO_CHANNEL_FREQ, SERVO_RES_BITS);
+  ESP32PWM::allocateTimer(0);
+  servoOut.setPeriodHertz(SERVO_FREQ_HZ);
+  servoAttached = servoOut.attach(SERVO_PIN, 500, 2500) != 0;
   servoWriteUs(servoNeutralUs);
 
   // Trig must idle low, or the first ping reads whatever the pin was doing.
@@ -1323,17 +1357,24 @@ void uploadReading() {
     reportDeg = normDeg(servoMoveFrom + servoMoveDir * servoMoveSweep * f);
   }
 
+  /* A servo that never attached has no position worth reporting. Sent as null
+     rather than 0.0 for the same reason a dead probe is: 0 is a value, and the
+     dashboard would draw a confident needle for a motor that cannot turn. */
+  char servoField[24];
+  if (servoAttached) snprintf(servoField, sizeof(servoField), "%.1f", reportDeg);
+  else strcpy(servoField, "null");
+
   char body[700];
   snprintf(body, sizeof(body),
            "{\"device_id\":\"%s\",\"temp_c\":%s,\"ph_v\":%s,\"tds_v\":%s,"
            "\"turbidity_v\":%s,\"distance_cm\":%s,\"raw\":%d,"
            "\"relay1\":%d,\"relay2\":%d,"
-           "\"servo_deg\":%.1f,\"servo_moving\":%d,\"servo_moves\":%d,"
+           "\"servo_deg\":%s,\"servo_moving\":%d,\"servo_moves\":%d,"
            "\"servo_uncertain\":%d,\"servo_ack\":%ld,\"servo_spin_ms\":%lu,"
            "\"rssi\":%d,\"uptime_ms\":%lu,\"reset_reason\":\"%s\",\"heap\":%lu}",
            DEVICE_ID, tempField, phField, tdsField, turbField, distField, avgRaw,
            relayOn[0] ? 1 : 0, relayOn[1] ? 1 : 0,
-           reportDeg, servoMoving ? 1 : 0, servoMovesSinceZero,
+           servoField, servoMoving ? 1 : 0, servoMovesSinceZero,
            servoUncertain ? 1 : 0, servoSeq, servoLastSpinMs,
            WiFi.RSSI(), millis(), RESET_REASON, (unsigned long)ESP.getFreeHeap());
 
