@@ -93,10 +93,10 @@
 #endif
 
 #ifndef JR_WIFI_SSID
-#define JR_WIFI_SSID "your-wifi-name"
+#define JR_WIFI_SSID "Spiritual Oasis"
 #endif
 #ifndef JR_WIFI_PASSWORD
-#define JR_WIFI_PASSWORD "your-wifi-password"
+#define JR_WIFI_PASSWORD "9809096979"
 #endif
 #ifndef JR_SERVER_HOST
 // Must be reachable FROM THE ESP32, so never "localhost".
@@ -178,14 +178,22 @@ const int SERVO_PIN = 16;
 const int SERVO_CHANNEL_FREQ = 50;   // standard 20 ms servo frame
 const int SERVO_RES_BITS = 16;
 
-/* Pulse widths. A continuous-rotation servo reads these as SPEED, not angle:
-   full one way, stop, full the other. NEUTRAL is the one worth trimming — a
-   CR MG996R often creeps at exactly 1500 us, and a servo that creeps while
-   "stopped" quietly destroys the dead reckoning. Nudge it a few us until the
-   horn is genuinely still. */
+/* Pulse widths. A continuous-rotation servo reads these as SPEED, not angle.
+
+   These two numbers and the timing table below are ONE calibration: the
+   milliseconds were measured while driving at this exact speed. Change the
+   offset and every timing underneath it is wrong — a faster pulse covers the
+   same angle in less time, so the old milliseconds overshoot.
+
+   1500 +/- 300 is what the bench sketch used when the table was measured.
+
+   NEUTRAL is worth trimming on its own: a CR MG996R often creeps at exactly
+   1500 us, and a servo that creeps while it believes it is stopped destroys
+   the dead reckoning silently. Nudge it a few us until the horn is still. */
 const int SERVO_NEUTRAL_US = 1500;
-const int SERVO_FORWARD_US = 2000;
-const int SERVO_REVERSE_US = 1000;
+const int SERVO_SPEED_OFFSET_US = 300;
+const int SERVO_FORWARD_US = SERVO_NEUTRAL_US + SERVO_SPEED_OFFSET_US;  // 1800
+const int SERVO_REVERSE_US = SERVO_NEUTRAL_US - SERVO_SPEED_OFFSET_US;  // 1200
 
 /* Calibration, and it must match dashboard/src/lib/config.ts. Milliseconds of
    full-speed travel per sweep, measured on the bench. Not proportional: the
@@ -890,7 +898,11 @@ void setup() {
 
   Serial.print("Servo    : GPIO ");
   Serial.print(SERVO_PIN);
-  Serial.println(", stopped, believed at 0 deg (nothing measures this)");
+  Serial.print(", drive ");
+  Serial.print(SERVO_FORWARD_US);
+  Serial.print("/");
+  Serial.print(SERVO_REVERSE_US);
+  Serial.println(" us, stopped, believed at 0 deg (nothing measures this)");
 
   Serial.print("Pumps    : GPIO ");
   Serial.print(RELAY_PINS[0]);
