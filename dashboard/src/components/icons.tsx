@@ -92,6 +92,15 @@ export function NavIcon({ id, size = 16 }: { id: string; size?: number }) {
           <path d="M9 1.8v2.6M6.6 4.4 9 1.8l2.4 2.6" />
         </svg>
       );
+    case "servo":
+      // A rotor with a pointer: a rotary actuator, not a pump impeller.
+      return (
+        <svg {...p}>
+          <circle cx={9} cy={9} r={6.4} />
+          <path d="M9 9V3.4" />
+          <circle cx={9} cy={9} r={1.5} fill="currentColor" stroke="none" />
+        </svg>
+      );
     case "download":
       return (
         <svg {...p}>

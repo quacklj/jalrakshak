@@ -75,6 +75,31 @@ export type Reading = {
    * is the only way to tell "commanded" from "running".
    */
   relays?: Partial<Record<RelayId, boolean>>;
+
+  /* ---- Servo, as the NODE believes it ---------------------------------- *
+   * Every one of these is dead reckoning. The servo is a continuous-rotation
+   * MG996R driven by a stopwatch, with no encoder and no feedback of any kind,
+   * so "position" here means "where the node calculates it ended up". Treated
+   * as a measurement it will quietly lie; the UI must never present it as one.
+   * ---------------------------------------------------------------------- */
+
+  /** Believed angle, 0–359.9°. null when the node reports no servo at all. */
+  servoDeg: number | null;
+  /** True while a timed move is still running. */
+  servoMoving?: boolean;
+  /**
+   * Moves completed since the last re-zero. The drift proxy: every timed move
+   * adds a little error, so this is how much the belief above has decayed.
+   */
+  servoMovesSinceZero?: number;
+  /**
+   * Set when a move was cut short — a STOP mid-travel, or a reset while
+   * moving. The angle is then an interpolation of an interrupted move, which
+   * is a materially weaker claim than a completed one.
+   */
+  servoUncertain?: boolean;
+  /** The command sequence the node last acted on. See ServoView.seq. */
+  servoAckSeq?: number;
 };
 
 /** Payload the ESP32 posts to /api/ingest. */
@@ -94,6 +119,57 @@ export type IngestPayload = {
   /** Actual relay positions, 0/1 or false/true. */
   relay1?: number | boolean;
   relay2?: number | boolean;
+
+  /** Believed servo angle in degrees, dead reckoned by the node. */
+  servo_deg?: number | null;
+  servo_moving?: number | boolean;
+  servo_moves?: number;
+  servo_uncertain?: number | boolean;
+  servo_ack?: number;
+};
+
+/* ------------------------------------------------------------------ *
+ * Servo
+ * ------------------------------------------------------------------ */
+
+/**
+ * What the dashboard is asking the servo to do.
+ *
+ *   goto  rotate to an absolute angle, shortest path by TIME
+ *   stop  halt immediately, wherever it is
+ *   zero  declare the current physical position to be 0°, without moving
+ *   turn  a whole revolution, for flushing — a movement, not a position
+ */
+export type ServoCommand = "goto" | "stop" | "zero" | "turn";
+
+export type ServoView = {
+  /**
+   * Bumped on every new command. The node compares it against the last seq it
+   * acted on, which is what stops a repeated poll from re-running the same
+   * move over and over — the poll is level-triggered, the command edge-triggered.
+   */
+  seq: number;
+  command: ServoCommand;
+  /** Target angle for "goto"; signed revolutions for "turn"; 0 otherwise. */
+  arg: number;
+  issuedAt: number;
+  source: string;
+
+  /** Where the dashboard reckons it will end up, for the target ghost marker. */
+  targetDeg: number | null;
+  /** Direction and duration the dashboard predicts for this move. */
+  planDir: 1 | -1 | null;
+  planSweep: number | null;
+  planMs: number | null;
+
+  /* ---- what the NODE last said, which is a different fact ---- */
+  actualDeg: number | null;
+  actualAt: number | null;
+  moving: boolean;
+  movesSinceZero: number | null;
+  uncertain: boolean;
+  /** null until the node has acknowledged any command at all. */
+  ackSeq: number | null;
 };
 
 /** One pump as the dashboard and the API talk about it. */

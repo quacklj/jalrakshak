@@ -4,6 +4,7 @@ import { useState } from "react";
 import ConnectionBanner from "@/components/ConnectionBanner";
 import PumpControls from "@/components/PumpControls";
 import SensorCard from "@/components/SensorCard";
+import ServoControl from "@/components/ServoControl";
 import SensorStatus from "@/components/SensorStatus";
 import { useLive } from "@/components/useLive";
 import { deviceDot, deviceLabel } from "@/lib/bandStyle";
@@ -109,6 +110,8 @@ export default function LivePage() {
 
           <div className="grid" style={{ gridTemplateColumns: "1fr", alignContent: "start" }}>
             <PumpControls deviceState={state} now={clock} />
+
+            <ServoControl deviceState={state} now={clock} />
 
             <div className="card" style={{ padding: 20 }}>
               <div className="eyebrow" style={{ marginBottom: 16 }}>

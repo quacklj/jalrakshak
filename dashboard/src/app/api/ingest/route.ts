@@ -3,6 +3,7 @@ import {
   DEFAULT_DEVICE_ID,
   RELAYS,
   distanceToLevel,
+  servoNormDeg,
   isTurbidityPlausible,
   voltsToNtu,
   voltsToPh,
@@ -58,6 +59,7 @@ export async function POST(req: Request) {
   const tdsV = num(body.tds_v);
   const turbidityV = num(body.turbidity_v);
   const distanceCm = num(body.distance_cm);
+  const servoDegIn = num(body.servo_deg);
 
   // A payload carrying no sensor at all is a malformed request, not a reading.
   if (
@@ -115,6 +117,15 @@ export async function POST(req: Request) {
       typeof body.reset_reason === "string" ? body.reset_reason.slice(0, 32) : undefined,
     heap: num(body.heap) ?? undefined,
     relays: Object.keys(relays).length ? relays : undefined,
+
+    // Everything the node believes about the servo. Passed through untouched:
+    // the node ran the motor and timed it, so its belief is the only one with
+    // any grounding. The dashboard's own idea of the angle is a prediction.
+    servoDeg: servoDegIn === null ? null : servoNormDeg(servoDegIn),
+    servoMoving: bool(body.servo_moving),
+    servoMovesSinceZero: num(body.servo_moves) ?? undefined,
+    servoUncertain: bool(body.servo_uncertain),
+    servoAckSeq: num(body.servo_ack) ?? undefined,
   };
 
   addReading(reading);
@@ -138,6 +149,7 @@ export async function POST(req: Request) {
       turbidity: reading.turbidityNtu === null ? "not detected" : "ok",
       level: reading.levelPct === null ? "not detected" : "ok",
     },
+    servo: reading.servoDeg,
   });
 }
 
@@ -146,7 +158,8 @@ export async function GET() {
     ok: true,
     hint:
       "POST JSON here: { device_id, temp_c, ph_v, tds_v, turbidity_v, distance_cm, raw, " +
-      "rssi, uptime_ms, relay1, relay2 }. distance_cm is the ultrasonic's distance DOWN TO " +
+      "rssi, uptime_ms, relay1, relay2, servo_deg, servo_moving, servo_moves, " +
+      "servo_uncertain, servo_ack }. distance_cm is the ultrasonic's distance DOWN TO " +
       "the water surface; the tank level is derived from it here. Send a probe's field as " +
       "null when it is not answering — never as 0.",
     tokenRequired: Boolean(process.env.DEVICE_TOKEN),

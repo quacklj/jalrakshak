@@ -15,9 +15,15 @@
               DATA -> GPIO 4   (+ 4.7k pull-up between DATA and 3.3V)
 
     AJ-SR04M  VCC -> 5V    GND -> common
-              TRIG -> GPIO 16   (direct, 3.3V logic is enough to trigger it)
+              TRIG -> GPIO 15   (direct, 3.3V logic is enough to trigger it)
               ECHO -> [1k] -> node -> [2k] -> GND
                               node -> GPIO 17
+              NOTE: TRIG moved off GPIO 16, which the servo now has.
+
+    MG996R    SIGNAL -> GPIO 16
+              POWER  -> its OWN 5V supply, NOT the ESP32's. Only GND is shared.
+              A stalled MG996R pulls ~2.5 A. On a shared rail that browns out
+              the ESP32 and takes every sensor down with it.
               The divider is not optional: ECHO idles at 5V and the ESP32-S3's
               pins are 3.3V. 1k/2k brings 5V down to 3.3V.
 
@@ -41,7 +47,12 @@
      sensor face to the full water line, and sensor face to the tank floor.
      They go in dashboard/src/lib/config.ts, not here.
 
-  3. RELAY_ACTIVE_LOW below. Most cheap relay boards energise when the input is
+  3. The servo's supply. See the MG996R note in the wiring block: it needs its
+     own 5 V, with only GND tied back. This is the same failure the pumps can
+     cause, but a servo stalling against a jammed load is a harder, longer hit
+     than pump inrush.
+
+  4. RELAY_ACTIVE_LOW below. Most cheap relay boards energise when the input is
      pulled LOW; some are the opposite. Get this wrong and the pumps run when
      the dashboard says they are off. Test with the pump disconnected first —
      you should hear the relay click when you press Start, not before.
@@ -103,6 +114,7 @@ const char* WIFI_PASSWORD = JR_WIFI_PASSWORD;
 const char* SERVER_HOST = JR_SERVER_HOST;
 const char* INGEST_PATH = "/api/ingest";
 const char* RELAY_PATH = "/api/relays?fmt=text";
+const char* SERVO_PATH = "/api/servo?fmt=text";
 
 const char* DEVICE_ID = "ESP32-JR01";
 const char* DEVICE_TOKEN = JR_DEVICE_TOKEN;
@@ -139,7 +151,7 @@ const int TURBIDITY_CHANNEL = 2;
 const float DIVIDER_RATIO = 15.0 / (10.0 + 15.0);  // 10k/15k divider = 0.6
 
 // ---- AJ-SR04M ultrasonic (tank level) ----
-const int TRIG_PIN = 16;
+const int TRIG_PIN = 15;
 const int ECHO_PIN = 17;
 
 /* 25 ms of flight is about 4.3 m each way — far past any tank, and short
@@ -153,6 +165,44 @@ const int PINGS_PER_SAMPLE = 5;
 /* Room for every sample between two uploads (10 s / 2 s = 5), with slack. */
 const int DIST_WINDOW = 24;
 
+/* ---- MG996R servo, continuous rotation ---------------------------------
+   No encoder, no feedback, no way to ask it where it is. Angles are produced
+   by running the motor at full speed for a measured time and then stopping,
+   so every position this node reports is dead reckoning and is labelled as
+   such all the way up to the dashboard.
+
+   Driven straight off LEDC rather than through a servo library: the ESP32
+   core already has the peripheral, and one less dependency is one less thing
+   to install on a fresh machine before the node will build. */
+const int SERVO_PIN = 16;
+const int SERVO_CHANNEL_FREQ = 50;   // standard 20 ms servo frame
+const int SERVO_RES_BITS = 16;
+
+/* Pulse widths. A continuous-rotation servo reads these as SPEED, not angle:
+   full one way, stop, full the other. NEUTRAL is the one worth trimming — a
+   CR MG996R often creeps at exactly 1500 us, and a servo that creeps while
+   "stopped" quietly destroys the dead reckoning. Nudge it a few us until the
+   horn is genuinely still. */
+const int SERVO_NEUTRAL_US = 1500;
+const int SERVO_FORWARD_US = 2000;
+const int SERVO_REVERSE_US = 1000;
+
+/* Calibration, and it must match dashboard/src/lib/config.ts. Milliseconds of
+   full-speed travel per sweep, measured on the bench. Not proportional: the
+   per-120 segments are 715, 745 and 840 ms, because the rail sags as the move
+   goes on. Interpolation between the anchors is therefore piecewise. */
+const int SERVO_ANCHOR_COUNT = 4;
+const float SERVO_ANCHOR_DEG[SERVO_ANCHOR_COUNT] = { 0, 120, 240, 360 };
+const unsigned long SERVO_FWD_MS[SERVO_ANCHOR_COUNT] = { 0, 715, 1460, 2300 };
+const unsigned long SERVO_REV_MS[SERVO_ANCHOR_COUNT] = { 0, 647, 1320, 2080 };
+
+/* Nothing should ever run the motor longer than a full turn plus a margin. If
+   a computed duration exceeds this the command is refused rather than trusted,
+   because the failure mode is a servo that never stops. */
+const unsigned long SERVO_MAX_MOVE_MS = 2600;
+
+const unsigned long SERVO_POLL_MS = 1000;
+
 // ---- Relays ----
 const int RELAY_COUNT = 2;
 const int RELAY_PINS[RELAY_COUNT] = { 14, 18 };
@@ -163,6 +213,28 @@ unsigned long relaySince[RELAY_COUNT] = { 0, 0 };
 bool adsPresent = false;
 bool dsPresent = false;
 bool sonarPresent = false;
+
+/* ---- servo state, all of it dead reckoning ---- */
+float servoDeg = 0.0f;          // where we believe the horn is, 0-359.9
+bool servoMoving = false;
+/* Starts TRUE, and that is not pessimism. A reset wipes the dead reckoning but
+   not the horn: after any restart the servo is physically wherever it was left,
+   which the node has no way to discover. Reporting a confident 0 deg would be
+   inventing a measurement. It stays uncertain until someone re-zeroes against
+   a physical mark. */
+bool servoUncertain = true;
+int servoMovesSinceZero = 0;
+long servoSeq = 0;              // last command sequence acted on
+unsigned long servoMoveStart = 0;
+unsigned long servoMoveMs = 0;
+float servoMoveFrom = 0.0f;
+float servoMoveSweep = 0.0f;
+int servoMoveDir = 1;
+unsigned long lastServoPoll = 0;
+/* Set when a move ends, so the next loop uploads immediately instead of
+   sitting on a stale angle for the rest of the post interval. A 2 s move
+   followed by 8 s of silence makes the dashboard look frozen. */
+bool servoReportDue = false;
 
 // ---- accumulators, averaged between uploads ----
 float tempSum = 0.0f;
@@ -202,6 +274,14 @@ bool buildUrl(char* out, size_t len, const char* path);
 float pingOnceCm();
 float readDistanceCm();
 float medianOf(float* v, int n);
+void servoWriteUs(int us);
+void servoHalt(const char* why);
+unsigned long servoMsForSweep(float sweepDeg, int dir);
+void servoStartMove(float sweepDeg, int dir, const char* why);
+void servoGoTo(float targetDeg);
+void serviceServo();
+void pollServo();
+float normDeg(float d);
 
 // Why the chip last restarted. Uploaded with every reading, because on the S3
 // the USB serial port dies with each reset — so the dashboard is often the only
@@ -370,6 +450,230 @@ void enforcePumpLimits() {
     Serial.println("      Losing the dashboard while a pump runs is exactly when you least");
     Serial.println("      want it latched on, so both relays are now off.");
   }
+}
+
+/* ======================= SERVO ======================= */
+
+float normDeg(float d) {
+  while (d < 0) d += 360.0f;
+  while (d >= 360.0f) d -= 360.0f;
+  return d;
+}
+
+/* Pulse width -> LEDC duty. The frame is 20 ms at 50 Hz, so a pulse is that
+   fraction of full scale. */
+void servoWriteUs(int us) {
+  const long full = (1L << SERVO_RES_BITS) - 1;
+  long duty = (long)((float)us / 20000.0f * (float)full);
+  if (duty < 0) duty = 0;
+  if (duty > full) duty = full;
+  ledcWrite(SERVO_PIN, (uint32_t)duty);
+}
+
+/* Stops the motor wherever it is.
+
+   If this is called mid-move the angle becomes an interpolation of an
+   interrupted run, which is a materially weaker claim than a completed move —
+   so it is marked uncertain rather than silently kept as if it were solid. */
+void servoHalt(const char* why) {
+  if (servoMoving) {
+    unsigned long elapsed = millis() - servoMoveStart;
+    float fraction = servoMoveMs > 0 ? (float)elapsed / (float)servoMoveMs : 0.0f;
+    if (fraction > 1.0f) fraction = 1.0f;
+    servoDeg = normDeg(servoMoveFrom + servoMoveDir * servoMoveSweep * fraction);
+    servoUncertain = true;
+    servoMovesSinceZero++;
+    servoMoving = false;
+    servoReportDue = true;
+
+    Serial.print("Servo: STOPPED mid-move at ~");
+    Serial.print(servoDeg, 1);
+    Serial.print(" deg  [");
+    Serial.print(why);
+    Serial.println("] - angle is an estimate now, re-zero when you can");
+  }
+  servoWriteUs(SERVO_NEUTRAL_US);
+}
+
+/* Milliseconds to sweep this many degrees, interpolated piecewise between the
+   calibration anchors. Piecewise and not a single ms-per-degree constant
+   because the servo slows as a move goes on: one constant puts a 180 degree
+   move out by roughly 10 degrees. */
+unsigned long servoMsForSweep(float sweepDeg, int dir) {
+  const unsigned long* table = (dir > 0) ? SERVO_FWD_MS : SERVO_REV_MS;
+  float s = sweepDeg;
+  if (s < 0) s = 0;
+  if (s > 360.0f) s = 360.0f;
+
+  for (int i = 1; i < SERVO_ANCHOR_COUNT; i++) {
+    float a0 = SERVO_ANCHOR_DEG[i - 1];
+    float a1 = SERVO_ANCHOR_DEG[i];
+    if (s <= a1) {
+      float f = (a1 == a0) ? 0.0f : (s - a0) / (a1 - a0);
+      return (unsigned long)(table[i - 1] + f * (float)(table[i] - table[i - 1]));
+    }
+  }
+  return table[SERVO_ANCHOR_COUNT - 1];
+}
+
+void servoStartMove(float sweepDeg, int dir, const char* why) {
+  if (sweepDeg <= 0.05f) return;  // already there
+
+  unsigned long ms = servoMsForSweep(sweepDeg, dir);
+  if (ms == 0) return;
+  if (ms > SERVO_MAX_MOVE_MS) {
+    // Refusing beats trusting: the failure this guards against is a motor that
+    // is told to run and never told to stop.
+    Serial.print("Servo: refused a ");
+    Serial.print(ms);
+    Serial.print(" ms move, over the ");
+    Serial.print(SERVO_MAX_MOVE_MS);
+    Serial.println(" ms ceiling");
+    return;
+  }
+
+  servoMoveFrom = servoDeg;
+  servoMoveSweep = sweepDeg;
+  servoMoveDir = dir;
+  servoMoveMs = ms;
+  servoMoveStart = millis();
+  servoMoving = true;
+
+  servoWriteUs(dir > 0 ? SERVO_FORWARD_US : SERVO_REVERSE_US);
+
+  Serial.print("Servo: ");
+  Serial.print(servoDeg, 1);
+  Serial.print(" -> ");
+  Serial.print(normDeg(servoDeg + dir * sweepDeg), 1);
+  Serial.print(" deg, ");
+  Serial.print(dir > 0 ? "forward" : "reverse");
+  Serial.print(" ");
+  Serial.print(sweepDeg, 1);
+  Serial.print(" deg in ");
+  Serial.print(ms);
+  Serial.print(" ms  [");
+  Serial.print(why);
+  Serial.println("]");
+}
+
+/* Shortest path by TIME, not by arc.
+
+   Reverse runs about 9.6% faster than forward on this servo, so the shorter
+   way round is not always the quicker one — and the move that finishes sooner
+   is also the one with less time to drift. */
+void servoGoTo(float targetDeg) {
+  float target = normDeg(targetDeg);
+  float fwd = normDeg(target - servoDeg);
+  float rev = normDeg(servoDeg - target);
+
+  if (fwd < 0.05f) {
+    Serial.println("Servo: already there");
+    return;
+  }
+
+  unsigned long fwdMs = servoMsForSweep(fwd, 1);
+  unsigned long revMs = servoMsForSweep(rev, -1);
+
+  if (revMs < fwdMs) servoStartMove(rev, -1, "dashboard");
+  else servoStartMove(fwd, 1, "dashboard");
+}
+
+/* Ends a move once its clock runs out.
+
+   Called every pass of loop() and never blocks. A blocking 2.3 s move would
+   also block enforcePumpLimits(), and a pump safety limit that only runs when
+   the servo is idle is not a safety limit. */
+void serviceServo() {
+  if (!servoMoving) return;
+
+  unsigned long elapsed = millis() - servoMoveStart;
+  if (elapsed < servoMoveMs) return;
+
+  servoWriteUs(SERVO_NEUTRAL_US);
+  servoDeg = normDeg(servoMoveFrom + servoMoveDir * servoMoveSweep);
+  servoMoving = false;
+  servoMovesSinceZero++;
+  servoReportDue = true;
+
+  Serial.print("Servo: arrived at ~");
+  Serial.print(servoDeg, 1);
+  Serial.print(" deg (believed, ");
+  Serial.print(servoMovesSinceZero);
+  Serial.println(" moves since zero)");
+}
+
+/* Asks the dashboard what the servo should be doing.
+
+   The reply is one short line, "<seq>,<letter>,<arg>" — no JSON parser needed,
+   same as the relay poll. The seq is what makes a 1 Hz poll safe: the node acts
+   only when it changes, so re-reading the same line a thousand times cannot
+   re-run the same move a thousand times. Anything that does not parse cleanly
+   is discarded, so an error page or a captive portal can never be read as a
+   command to run a motor. */
+void pollServo() {
+  if (WiFi.status() != WL_CONNECTED) return;
+
+  char url[160];
+  if (!buildUrl(url, sizeof(url), SERVO_PATH)) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  if (!http.begin(client, url)) return;
+  http.setTimeout(3000);
+  if (strlen(DEVICE_TOKEN) > 0) http.addHeader("x-device-token", DEVICE_TOKEN);
+
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    body.trim();
+
+    long seq = -1;
+    char cmd = '?';
+    float arg = 0;
+    if (sscanf(body.c_str(), "%ld,%c,%f", &seq, &cmd, &arg) == 3 && seq >= 0) {
+      lastServerContact = millis();
+
+      if (seq != servoSeq) {
+        servoSeq = seq;
+        switch (cmd) {
+          case 'G':
+            if (servoMoving) servoHalt("superseded by a new target");
+            servoGoTo(arg);
+            break;
+          case 'S':
+            servoHalt("dashboard stop");
+            break;
+          case 'Z':
+            // Re-zero. Declares the current physical position to be 0 without
+            // moving anything, and clears the accumulated doubt with it —
+            // which is the only thing that ever resets the drift.
+            if (servoMoving) servoHalt("re-zeroed mid-move");
+            servoDeg = 0.0f;
+            servoMovesSinceZero = 0;
+            servoUncertain = false;
+            servoReportDue = true;
+            Serial.println("Servo: re-zeroed here, drift count cleared");
+            break;
+          case 'T':
+            if (servoMoving) servoHalt("superseded by a turn");
+            servoStartMove(360.0f, arg < 0 ? -1 : 1, "full turn");
+            break;
+          default:
+            Serial.print("Servo poll: unknown command '");
+            Serial.print(cmd);
+            Serial.println("' - ignored");
+            break;
+        }
+      }
+    } else {
+      Serial.print("Servo poll: unparseable body \"");
+      Serial.print(body);
+      Serial.println("\" - ignored");
+    }
+  } else if (code == 401) {
+    Serial.println("Servo poll: 401 - DEVICE_TOKEN does not match the server's.");
+  }
+  http.end();
 }
 
 /* ======================= TANK LEVEL ======================= */
@@ -584,6 +888,10 @@ void setup() {
     Serial.println("   The sketch crashed. The backtrace above this line names the fault.");
   }
 
+  Serial.print("Servo    : GPIO ");
+  Serial.print(SERVO_PIN);
+  Serial.println(", stopped, believed at 0 deg (nothing measures this)");
+
   Serial.print("Pumps    : GPIO ");
   Serial.print(RELAY_PINS[0]);
   Serial.print(" and GPIO ");
@@ -591,6 +899,13 @@ void setup() {
   Serial.print(", active-");
   Serial.print(RELAY_ACTIVE_LOW ? "LOW" : "HIGH");
   Serial.println(", both off");
+
+  /* Servo to neutral immediately, for the same reason the relays go first: on
+     a continuous-rotation servo a floating signal pin during boot can be read
+     as "run", and a motor that starts itself on every reset is the kind of
+     fault you chase for a day. */
+  ledcAttach(SERVO_PIN, SERVO_CHANNEL_FREQ, SERVO_RES_BITS);
+  servoWriteUs(SERVO_NEUTRAL_US);
 
   // Trig must idle low, or the first ping reads whatever the pin was doing.
   pinMode(TRIG_PIN, OUTPUT);
@@ -667,7 +982,11 @@ void sampleSensors() {
     Serial.print(" C");
   }
 
-  Serial.print("  |  Tank ");
+  Serial.print("  |  Servo ");
+  Serial.print(servoDeg, 1);
+  Serial.print(servoMoving ? " deg>" : (servoUncertain ? " deg~" : " deg "));
+
+  Serial.print(" |  Tank ");
   if (!distOk) {
     Serial.print("no echo");
   } else {
@@ -778,14 +1097,27 @@ void uploadReading() {
   if (haveDist) snprintf(distField, sizeof(distField), "%.1f", medDist);
   else strcpy(distField, "null");
 
-  char body[512];
+  // Interpolated while a move is running, so the dashboard sees the horn cross
+  // the dial rather than teleport between two settled angles.
+  float reportDeg = servoDeg;
+  if (servoMoving && servoMoveMs > 0) {
+    float f = (float)(millis() - servoMoveStart) / (float)servoMoveMs;
+    if (f > 1.0f) f = 1.0f;
+    reportDeg = normDeg(servoMoveFrom + servoMoveDir * servoMoveSweep * f);
+  }
+
+  char body[700];
   snprintf(body, sizeof(body),
            "{\"device_id\":\"%s\",\"temp_c\":%s,\"ph_v\":%s,\"tds_v\":%s,"
            "\"turbidity_v\":%s,\"distance_cm\":%s,\"raw\":%d,"
            "\"relay1\":%d,\"relay2\":%d,"
+           "\"servo_deg\":%.1f,\"servo_moving\":%d,\"servo_moves\":%d,"
+           "\"servo_uncertain\":%d,\"servo_ack\":%ld,"
            "\"rssi\":%d,\"uptime_ms\":%lu,\"reset_reason\":\"%s\",\"heap\":%lu}",
            DEVICE_ID, tempField, phField, tdsField, turbField, distField, avgRaw,
            relayOn[0] ? 1 : 0, relayOn[1] ? 1 : 0,
+           reportDeg, servoMoving ? 1 : 0, servoMovesSinceZero,
+           servoUncertain ? 1 : 0, servoSeq,
            WiFi.RSSI(), millis(), RESET_REASON, (unsigned long)ESP.getFreeHeap());
 
   char url[160];
@@ -865,9 +1197,27 @@ void loop() {
   // runs after a successful network call is not a safety limit.
   enforcePumpLimits();
 
+  // Before the network calls, and never blocking: a move that overruns because
+  // a poll was slow is a move that lands in the wrong place.
+  serviceServo();
+
   if (nowMs - lastRelayPoll >= RELAY_POLL_MS) {
     lastRelayPoll = nowMs;
     pollRelays();
+  }
+
+  if (nowMs - lastServoPoll >= SERVO_POLL_MS) {
+    lastServoPoll = nowMs;
+    pollServo();
+  }
+
+  /* A finished move uploads straight away rather than waiting out the rest of
+     the post interval. Otherwise a 2 s move is followed by 8 s of the
+     dashboard showing the old angle, which reads as a dead feed. */
+  if (servoReportDue && !servoMoving) {
+    servoReportDue = false;
+    lastPost = nowMs;
+    uploadReading();
   }
 
   if (nowMs - lastSample >= SAMPLE_INTERVAL_MS) {
@@ -898,6 +1248,9 @@ void loop() {
     the button only says "Running" once this node has confirmed it in a payload.
   - A missing probe still uploads, as null, and the dashboard names it as
     "not detected" rather than showing the node as offline.
+  - Servo angle is marked ~ until you re-zero it, and > while it is moving.
+    After any reset it is ~ by definition: the node cannot know where the horn
+    physically is, only how long it has run the motor since you last told it.
   - Tank distance falls as the tank fills. If it reads "no echo" with the sensor
     wired, run firmware/ultrasonic_test first: it does nothing but ping, so it
     tells you whether the problem is the sensor or everything around it.

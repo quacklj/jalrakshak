@@ -49,7 +49,14 @@ export function formatReading(r: Reading): string {
     ? `${r.relays.pump1 ? "1" : "0"}${r.relays.pump2 ? "1" : "0"}`
     : "--";
   const rssi = r.rssi === undefined ? "" : ` ${String(r.rssi).padStart(4)} dBm`;
-  return `${clock} ${r.deviceId.padEnd(12)}${cells}  pumps ${pumps}${rssi}`;
+  // "~" marks a servo angle the node itself flagged as interrupted, and ">"
+  // one still in motion. Both are weaker claims than a settled position, and
+  // the log is often the only place anyone will notice the difference.
+  const servo =
+    r.servoDeg === null
+      ? ""
+      : `  servo ${r.servoMoving ? ">" : r.servoUncertain ? "~" : " "}${r.servoDeg.toFixed(1).padStart(5)}°`;
+  return `${clock} ${r.deviceId.padEnd(12)}${cells}  pumps ${pumps}${servo}${rssi}`;
 }
 
 export function logReading(r: Reading) {

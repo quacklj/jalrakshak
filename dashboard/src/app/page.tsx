@@ -20,6 +20,7 @@ import PumpControls from "@/components/PumpControls";
 import RiskDial from "@/components/RiskDial";
 import SensorCard from "@/components/SensorCard";
 import SensorStatus from "@/components/SensorStatus";
+import ServoStatus from "@/components/ServoStatus";
 import StatusPill from "@/components/StatusPill";
 import { useLive } from "@/components/useLive";
 
@@ -204,6 +205,7 @@ export default function OverviewPage() {
             {readings.length} samples · {ageLabel(latest.t, now)}
           </div>
         </div>
+        <ServoStatus />
       </div>
 
       <div

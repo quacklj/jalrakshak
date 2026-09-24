@@ -21,7 +21,7 @@ export async function GET(req: Request) {
     "tds_v,tds_ppm,tds_status," +
     "turbidity_v,turbidity_ntu,turbidity_status," +
     "distance_cm,level_pct,level_status," +
-    "pump1,pump2,rssi_dbm";
+    "pump1,pump2,servo_deg,servo_moving,servo_moves_since_zero,servo_uncertain,rssi_dbm";
   const status = (v: number | null) => (v === null ? "not_detected" : "ok");
   const relay = (v: boolean | undefined) => (v === undefined ? "" : v ? "on" : "off");
   const body = rows
@@ -46,6 +46,10 @@ export async function GET(req: Request) {
         status(r.levelPct),
         relay(r.relays?.pump1),
         relay(r.relays?.pump2),
+        r.servoDeg ?? "",
+        r.servoMoving === undefined ? "" : r.servoMoving ? "yes" : "no",
+        r.servoMovesSinceZero ?? "",
+        r.servoUncertain === undefined ? "" : r.servoUncertain ? "yes" : "no",
         r.rssi ?? "",
       ].join(","),
     )

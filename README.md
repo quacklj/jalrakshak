@@ -3,8 +3,8 @@
 Live water-quality dashboard for a single ESP32-S3 field node reading **water temperature**
 (DS18B20), **pH**, **TDS** and **turbidity** (analog probes via ADS1115), and **tank level**
 (AJ-SR04M ultrasonic). The node posts each reading over the internet, the dashboard charts all
-five in real time, and two **pump relays** are driven back the other way from buttons on the
-dashboard.
+five in real time, and two **pump relays** plus an **MG996R servo positioner** are driven back the
+other way from buttons on the dashboard.
 
 ```
 Jalraksha/
@@ -33,6 +33,10 @@ calibration numbers live in `dashboard/src/lib/config.ts`:
 
 The node only ever sends raw centimetres, so re-measuring the tank or remounting the sensor never
 means reflashing the ESP32.
+
+> **Pin change:** the ultrasonic's **TRIG moved from GPIO 16 to GPIO 15** when the servo took
+> GPIO 16. One wire. ECHO stays on GPIO 17. Leave TRIG on 16 and the servo's PWM will be read as
+> echoes, so tank level reports nonsense rather than simply going quiet.
 
 > **Mounting the AJ-SR04M.** It has a **~20 cm blind zone** — far larger than the 2 cm of an
 > HC-SR04 — and inside it the sensor returns nothing or nonsense. Mount it so that even a
@@ -204,6 +208,9 @@ sketch — otherwise anyone who finds the URL can inject fake readings.
 | `GET /api/relays`              | Pump state: commanded, confirmed, auto-off deadline |
 | `GET /api/relays?fmt=text`     | `"10"` — one character per relay, what the node polls |
 | `POST /api/relays`             | `{"id":"pump1","on":true}` or `{"allOff":true}`     |
+| `GET /api/servo`               | Servo state: commanded, believed, drift count       |
+| `GET /api/servo?fmt=text`      | `"7,G,240"` — seq, command, arg, what the node polls |
+| `POST /api/servo`              | `{"command":"goto","deg":240}`, `stop`, `zero`, `turn` |
 
 Ingest payload:
 
@@ -218,6 +225,11 @@ Ingest payload:
   "raw": 12980,
   "relay1": 0,
   "relay2": 0,
+  "servo_deg": 240.0,
+  "servo_moving": 0,
+  "servo_moves": 3,
+  "servo_uncertain": 0,
+  "servo_ack": 7,
   "rssi": -58,
   "uptime_ms": 412000
 }
@@ -300,6 +312,87 @@ would put a sensor that can return no echo at all in the path of a motor, so it 
 direction ("no reading" must mean stop) and a hysteresis band before it is trustworthy. Until then
 the four limits above are still the whole safety story, and a physical float switch is still the
 only thing that cannot be argued with.
+
+---
+
+## 5c. Servo positioner
+
+An **MG996R continuous-rotation servo on GPIO 16**, commanded from the Live Monitoring page.
+
+**It has no encoder.** Angles are produced by running the motor at full speed for a measured
+number of milliseconds and then stopping. Nothing ever reports back where the horn actually is, so
+every angle in this system is dead reckoning, and the UI is built to keep saying so rather than
+quietly presenting a guess as a readout.
+
+### Where the controls live
+
+| Page | What it has | Why |
+| --- | --- | --- |
+| **Live Monitoring** | The full dial, presets, slider, stop, re-zero | Beside the tank chart, so you see what a move did |
+| **Overview** | A read-only angle tile | A summary screen shouldn't rotate a valve by accident |
+| **Device** | The timing table | These are calibration constants, edited rarely and deliberately |
+
+### The calibration, and what it tells you
+
+| Sweep | Forward | Reverse | Forward ms/° |
+| --- | --- | --- | --- |
+| 120° | 715 ms | 647 ms* | 5.96 |
+| 240° | 1460 ms | 1320 ms* | 6.08 |
+| 360° | 2300 ms | **2080 ms** | 6.39 |
+
+\* scaled from the forward table, not measured. Bench them and replace.
+
+Two things fall out of these numbers, and both are built into the code:
+
+1. **The servo slows as a move goes on.** The per-120° segments are 715, 745 and 840 ms. That is
+   almost certainly the 5 V rail sagging under a sustained MG996R load. So interpolation between
+   the anchors is **piecewise**, not a single ms-per-degree constant — one constant puts a 180°
+   move out by roughly 10°. It also means **the calibration is only valid at the supply it was
+   measured on.**
+2. **Reverse is ~9.6% faster than forward.** So a move is chosen by *which direction finishes
+   sooner*, not which arc is shorter. Asking for 175° from 0° actually goes **reverse 185°** —
+   the longer way round, 1012 ms against 1056 ms. The quicker move is also the one with less time
+   to drift.
+
+### Drift, and the one thing that fixes it
+
+Nothing measures drift, so the dashboard counts the only thing it can: **moves since the last
+re-zero.** The dial goes amber past 8 and red past 20. `Set here = 0°` declares the current
+physical position to be zero without moving anything, and clears the count.
+
+Three states are deliberately distinguishable, in the UI and in the server log (`~` interrupted,
+`>` moving):
+
+- **settled** — a move ran to completion
+- **`>` moving** — in flight; the angle is interpolated from the clock
+- **`~` uncertain** — a move was cut short by STOP, *or the node restarted*
+
+**After any reset the angle is uncertain by definition.** A restart wipes the dead reckoning but
+not the horn, and the node has no way to discover where it was left. It reports uncertain until
+somebody re-zeroes against a physical mark. Reporting a confident 0° there would be inventing a
+measurement.
+
+### Safety
+
+A servo move is **self-limiting** in a way a pump is not: every move carries its own stop time, so
+losing the dashboard mid-move still ends with the motor stopped. On top of that:
+
+| Limit | Where | What it stops |
+| --- | --- | --- |
+| Neutral pulse written before anything else at boot | firmware | a floating pin being read as "run" on every reset |
+| 2600 ms move ceiling | firmware | a computed duration that would leave a motor running |
+| Move timed locally, not by the server | firmware | a dropped network leaving the servo turning |
+| Stop button never disabled | dashboard | needing the node "online" to halt a motor |
+
+> **The MG996R needs its own 5 V supply, with only GND shared.** A stalled one pulls ~2.5 A. On the
+> rail shared with the relay board that browns out the ESP32 and takes all five sensors down with
+> it — the same failure the pumps can cause, but harder and longer.
+
+### Trimming
+
+If the horn creeps while stopped, adjust `SERVO_NEUTRAL_US` in the sketch (1500 µs is nominal; a
+continuous-rotation MG996R often wants a few µs either side). A servo that creeps while it believes
+it is stationary destroys the dead reckoning silently.
 
 ---
 

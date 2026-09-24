@@ -13,6 +13,10 @@ import {
   RELAYS,
   SENSORS,
   SENSOR_ORDER,
+  SERVO_ANGLE_ANCHORS,
+  SERVO_FORWARD_MS,
+  SERVO_PIN,
+  SERVO_REVERSE_MS,
   TDS_K,
   TURBIDITY_CLEAR_V,
   TURBIDITY_MAX_NTU,
@@ -290,6 +294,55 @@ export default function DevicePage() {
       </div>
       <div style={{ fontSize: 11.5, color: "var(--muted-2)", marginTop: 9, lineHeight: 1.55 }}>
         Anything outside the warning range counts as critical. Edit these in{" "}
+        <code className="inline">src/lib/config.ts</code>.
+      </div>
+
+      <div className="eyebrow" style={{ margin: "28px 0 12px" }}>
+        Servo timing
+      </div>
+      <div className="card">
+        <div className="scroll-x">
+          <table style={{ minWidth: 480 }}>
+            <thead>
+              <tr>
+                <th>Sweep</th>
+                <th className="num">Forward</th>
+                <th className="num">Reverse</th>
+                <th className="num">Forward ms/°</th>
+                <th className="num">Reverse ms/°</th>
+              </tr>
+            </thead>
+            <tbody>
+              {SERVO_ANGLE_ANCHORS.slice(1).map((deg, i) => {
+                const f = SERVO_FORWARD_MS[i + 1];
+                const r = SERVO_REVERSE_MS[i + 1];
+                return (
+                  <tr key={deg}>
+                    <td style={{ fontWeight: 600 }}>{deg}°</td>
+                    <td className="mono num">{f} ms</td>
+                    <td className="mono num">{r} ms</td>
+                    <td className="mono num">{(f / deg).toFixed(2)}</td>
+                    <td className="mono num">{(r / deg).toFixed(2)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--muted-2)", marginTop: 9, lineHeight: 1.7 }}>
+        MG996R continuous rotation on <strong>GPIO {SERVO_PIN}</strong>. There is no encoder:
+        angles are produced by running the motor at full speed for a measured time, so everything
+        above is a calibration and none of it is a measurement.
+        <br />
+        The ms/° columns are not constant — the servo slows as a move goes on, which is
+        the 5V rail sagging under load. Interpolation between these anchors is therefore piecewise;
+        a single ms-per-degree figure puts a 180° move out by roughly 10°.
+        <br />
+        Reverse is about 9.6% faster than forward, so a move is chosen by which direction finishes
+        sooner rather than which arc is shorter. Only the reverse <strong>360°</strong> figure
+        has actually been measured; the other two are scaled from the forward table and should be
+        replaced with real bench numbers. Edit them in{" "}
         <code className="inline">src/lib/config.ts</code>.
       </div>
 

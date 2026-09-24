@@ -369,6 +369,117 @@ export const PUMP_COMMS_FAILSAFE_MS = 30_000;
 /** How often the firmware asks the server what the relays should be doing. */
 export const PUMP_POLL_MS = 1_000;
 
+/* ------------------------------------------------------------------ *
+ * Servo positioner — MG996R, continuous rotation
+ *
+ * THIS SERVO HAS NO POSITION FEEDBACK. It is a continuous-rotation MG996R:
+ * you drive it at full speed for a measured number of milliseconds and then
+ * stop, and the angle it lands on is inferred from a stopwatch. Nothing ever
+ * reports back where it actually is.
+ *
+ * Everything below is therefore a calibration, not a specification, and it is
+ * only valid at the supply voltage it was measured on.
+ * ------------------------------------------------------------------ */
+
+export const SERVO_PIN = 16;
+
+/** Angles the timings below were measured at. Must be ascending, starting 0. */
+export const SERVO_ANGLE_ANCHORS = [0, 120, 240, 360];
+
+/**
+ * Milliseconds of full-speed travel to sweep that many degrees.
+ *
+ * Measured on the bench. Note these are NOT proportional — the per-120°
+ * segments come out at 715, 745 and 840 ms, so the servo gets slower the
+ * longer it runs. That is almost certainly the 5V rail sagging under a
+ * sustained MG996R load, which is why interpolation below is piecewise
+ * between the anchors rather than a single ms-per-degree constant. A single
+ * constant puts a 180° move out by roughly 10°.
+ */
+export const SERVO_FORWARD_MS = [0, 715, 1460, 2300];
+
+/**
+ * The same, reversed. A full turn back measures 2080 ms against 2300 ms out —
+ * reverse runs about 9.6% faster, which is why direction is tracked separately
+ * rather than assumed symmetric.
+ *
+ * Only the full turn has actually been measured. The two intermediate figures
+ * are the forward ones scaled by 2080/2300, which is an assumption, not a
+ * calibration: measure 120° and 240° in reverse and replace them.
+ */
+export const SERVO_REVERSE_MS = [0, 647, 1320, 2080];
+
+/**
+ * The named positions the UI offers as presets.
+ *
+ * 360° is deliberately absent: on a continuous-rotation servo it is the same
+ * physical place as 0°, just one revolution later, so offering it as a
+ * *position* invites a pointless full lap. A whole turn is a movement, and it
+ * lives on its own control.
+ *
+ * Rename these for whatever the servo actually drives.
+ */
+export const SERVO_POSITIONS: { deg: number; name: string }[] = [
+  { deg: 0, name: "0°" },
+  { deg: 120, name: "120°" },
+  { deg: 240, name: "240°" },
+];
+
+/** How often the node asks what the servo should be doing. */
+export const SERVO_POLL_MS = 1_000;
+
+/**
+ * Completed moves since the last re-zero, before the UI stops presenting the
+ * angle as trustworthy. Nothing measures drift, so this counts the only thing
+ * that can be counted: how many chances it has had to accumulate.
+ */
+export const SERVO_DRIFT_WATCH = 8;
+export const SERVO_DRIFT_WARNING = 20;
+
+const normDeg = (d: number): number => ((d % 360) + 360) % 360;
+
+/** Milliseconds to sweep `sweepDeg`, interpolated piecewise between anchors. */
+export function servoMsFor(sweepDeg: number, dir: 1 | -1): number {
+  const table = dir === 1 ? SERVO_FORWARD_MS : SERVO_REVERSE_MS;
+  const s = Math.max(0, Math.min(360, sweepDeg));
+  for (let i = 1; i < SERVO_ANGLE_ANCHORS.length; i++) {
+    const a0 = SERVO_ANGLE_ANCHORS[i - 1];
+    const a1 = SERVO_ANGLE_ANCHORS[i];
+    if (s <= a1) {
+      const f = (a1 === a0 ? 0 : (s - a0) / (a1 - a0));
+      return Math.round(table[i - 1] + f * (table[i] - table[i - 1]));
+    }
+  }
+  return table[table.length - 1];
+}
+
+export type ServoPlan = { dir: 1 | -1; sweep: number; ms: number };
+
+/**
+ * How to get from one angle to another.
+ *
+ * Picks by TIME, not by arc. Because reverse runs ~10% faster, the shorter way
+ * round is not always the quicker one — a 190° reverse can beat a 170° forward
+ * — and the move that finishes sooner is also the one with less time to drift.
+ */
+export function servoPlan(fromDeg: number, toDeg: number): ServoPlan {
+  const fwd = normDeg(toDeg - fromDeg);
+  const rev = normDeg(fromDeg - toDeg);
+  if (fwd === 0) return { dir: 1, sweep: 0, ms: 0 };
+  const fwdMs = servoMsFor(fwd, 1);
+  const revMs = servoMsFor(rev, -1);
+  return revMs < fwdMs
+    ? { dir: -1, sweep: rev, ms: revMs }
+    : { dir: 1, sweep: fwd, ms: fwdMs };
+}
+
+/** Clamped to one lap in each direction — a "turn" is for flushing, not winding. */
+export function servoTurnMs(revs: number): number {
+  return servoMsFor(360, revs < 0 ? -1 : 1) * Math.min(1, Math.abs(revs));
+}
+
+export { normDeg as servoNormDeg };
+
 export function bandOfValue(value: number, spec: SensorSpec): Band {
   if (value >= spec.safe[0] && value <= spec.safe[1]) return "safe";
   if (value >= spec.watch[0] && value <= spec.watch[1]) return "watch";

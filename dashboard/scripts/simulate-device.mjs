@@ -35,6 +35,7 @@ const RAW = args.url || "http://localhost:3000";
 const HOST = RAW.replace(/\/api\/ingest\/?$/, "").replace(/\/$/, "");
 const INGEST = `${HOST}/api/ingest`;
 const RELAYS = `${HOST}/api/relays?fmt=text`;
+const SERVO = `${HOST}/api/servo?fmt=text`;
 
 const INTERVAL = Number(args.interval || 5000);
 const TOKEN = args.token || process.env.DEVICE_TOKEN || "";
@@ -60,6 +61,98 @@ let tick = 0;
 // What the node believes its own relays are doing. The dashboard's buttons
 // move these, exactly as they would move the real GPIOs.
 const relays = [false, false];
+
+/* The servo, dead reckoned exactly the way the firmware does it — including
+   starting out uncertain, because a node that just booted genuinely does not
+   know where the horn is. */
+const FWD_MS = [0, 715, 1460, 2300];
+const REV_MS = [0, 647, 1320, 2080];
+const ANCHORS = [0, 120, 240, 360];
+const servo = { deg: 0, moving: false, uncertain: true, moves: 0, seq: 0 };
+let servoMove = null; // { from, sweep, dir, ms, startedAt }
+
+const normDeg = (d) => ((d % 360) + 360) % 360;
+
+function msForSweep(sweep, dir) {
+  const table = dir > 0 ? FWD_MS : REV_MS;
+  const s = Math.max(0, Math.min(360, sweep));
+  for (let i = 1; i < ANCHORS.length; i++) {
+    if (s <= ANCHORS[i]) {
+      const f = (s - ANCHORS[i - 1]) / (ANCHORS[i] - ANCHORS[i - 1]);
+      return Math.round(table[i - 1] + f * (table[i] - table[i - 1]));
+    }
+  }
+  return table[table.length - 1];
+}
+
+function startMove(sweep, dir) {
+  if (sweep <= 0.05) return;
+  const ms = msForSweep(sweep, dir);
+  if (ms === 0) return;
+  servoMove = { from: servo.deg, sweep, dir, ms, startedAt: Date.now() };
+  servo.moving = true;
+  console.log(`  servo ${servo.deg.toFixed(0)}° ${dir > 0 ? "fwd" : "rev"} ${sweep.toFixed(0)}° in ${ms}ms`);
+}
+
+function haltServo(interrupted) {
+  if (servoMove) {
+    const f = Math.min(1, (Date.now() - servoMove.startedAt) / servoMove.ms);
+    servo.deg = normDeg(servoMove.from + servoMove.dir * servoMove.sweep * f);
+    servo.moves++;
+    if (interrupted) servo.uncertain = true;
+  }
+  servoMove = null;
+  servo.moving = false;
+}
+
+function serviceServo() {
+  if (!servoMove) return;
+  if (Date.now() - servoMove.startedAt < servoMove.ms) return;
+  servo.deg = normDeg(servoMove.from + servoMove.dir * servoMove.sweep);
+  servo.moves++;
+  servoMove = null;
+  servo.moving = false;
+  console.log(`  servo arrived ~${servo.deg.toFixed(1)}° (${servo.moves} moves since zero)`);
+}
+
+/** The firmware's servo poll: "<seq>,<letter>,<arg>", acted on only when seq changes. */
+async function pollServo() {
+  serviceServo();
+  try {
+    const res = await fetch(SERVO, { headers: auth });
+    if (!res.ok) return;
+    const m = (await res.text()).trim().match(/^(\d+),([GSZT]),(-?\d+)$/);
+    if (!m) return;
+    const [, seqRaw, cmd, argRaw] = m;
+    const seq = Number(seqRaw);
+    const arg = Number(argRaw);
+    if (seq === servo.seq) return;
+    servo.seq = seq;
+
+    if (cmd === "G") {
+      haltServo(true);
+      const fwd = normDeg(arg - servo.deg);
+      const rev = normDeg(servo.deg - arg);
+      if (fwd < 0.05) return;
+      if (msForSweep(rev, -1) < msForSweep(fwd, 1)) startMove(rev, -1);
+      else startMove(fwd, 1);
+    } else if (cmd === "S") {
+      haltServo(true);
+      console.log("  servo STOPPED");
+    } else if (cmd === "Z") {
+      haltServo(true);
+      servo.deg = 0;
+      servo.moves = 0;
+      servo.uncertain = false;
+      console.log("  servo re-zeroed");
+    } else if (cmd === "T") {
+      haltServo(true);
+      startMove(360, arg < 0 ? -1 : 1);
+    }
+  } catch {
+    /* the real node just retries next second too */
+  }
+}
 
 function step() {
   tick++;
@@ -109,6 +202,21 @@ function step() {
         : fault === "blind"
           ? round(8 + Math.random() * 3, 1) // risen into the blind zone
           : round(distCm, 1),
+    servo_deg: Number(
+      (servoMove
+        ? normDeg(
+            servoMove.from +
+              servoMove.dir *
+                servoMove.sweep *
+                Math.min(1, (Date.now() - servoMove.startedAt) / servoMove.ms),
+          )
+        : servo.deg
+      ).toFixed(1),
+    ),
+    servo_moving: servo.moving ? 1 : 0,
+    servo_moves: servo.moves,
+    servo_uncertain: servo.uncertain ? 1 : 0,
+    servo_ack: servo.seq,
     relay1: relays[0] ? 1 : 0,
     relay2: relays[1] ? 1 : 0,
     rssi: -50 - Math.round(Math.random() * 20),
@@ -156,6 +264,7 @@ if (backfill) console.log(`seeded ${backfill} readings`);
 console.log(`simulating ${DEVICE_ID} -> ${INGEST} every ${INTERVAL}ms, fault=${FAULT}`);
 console.log(`polling ${RELAYS} every 1s (ctrl-c to stop)`);
 setInterval(pollRelays, 1000);
+setInterval(pollServo, 300);   // faster than the node, so short moves are visible
 
 while (true) {
   const body = step();
@@ -170,6 +279,7 @@ while (true) {
         f(out.sensors.turbidity, `${out.ntu} NTU`),
         f(out.sensors.level, `tank ${out.level}% (${body.distance_cm}cm)`),
         `pumps ${relays.map((r) => (r ? "1" : "0")).join("")}`,
+        `servo ${servo.moving ? ">" : servo.uncertain ? "~" : ""}${body.servo_deg}°`,
       ].join(" · "),
     );
   } catch (err) {
